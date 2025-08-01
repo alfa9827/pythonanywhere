@@ -53,13 +53,6 @@ def crear_tarjeta():
     imagen.save(image_path)
     imagen_url = f'images/{image_filename}'
 
-    # Guardar video en 'static/videos/<nombre>/'
-    video_filename = secure_filename(video_file.filename)
-    video_dir = os.path.join(current_app.static_folder, 'videos', nombre)
-    os.makedirs(video_dir, exist_ok=True)
-    video_path = os.path.join(video_dir, video_filename)
-    video_file.save(video_path)
-
     # Crear carpeta de blueprint y guardar HTML
     blueprint_folder = os.path.join('blueprints', nombre)
     template_folder = os.path.join(blueprint_folder, 'templates')
@@ -72,6 +65,17 @@ def crear_tarjeta():
     if not html_filename.endswith('.html'):
         flash('El archivo HTML debe terminar en .html', 'danger')
         return redirect(url_for('admin.index'))
+
+    # Guardar video
+    if video_file:
+        video_filename = secure_filename(video_file.filename)
+        videos_folder = os.path.join(current_app.static_folder, 'videos')
+        os.makedirs(videos_folder, exist_ok=True)  # Asegura que exista la carpeta
+        video_path = os.path.join(videos_folder, video_filename)
+        video_file.save(video_path)
+        video_url = f'videos/{video_filename}'
+    else:
+        video_url = None  # O un valor por defecto si es necesario
 
     # Crear archivos __init__.py y main.py
     clean_nombre = nombre.strip()

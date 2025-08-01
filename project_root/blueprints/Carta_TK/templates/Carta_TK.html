@@ -1,67 +1,45 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Tarjeta con Video Plyr</title>
-
-  <!-- Cargar CSS de Plyr desde CDN -->
-  <link
-    rel="stylesheet"
-    href="https://cdn.plyr.io/3.7.8/plyr.css"
-  />
-
-  <style>
-    body {
-      margin: 0;
-      background: #000;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-    }
-    .plyr {
-      width: 90vw;
-      max-width: 800px;
-    }
-  </style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video</title>
+    <style>
+        body {
+            background: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .video-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        @media (max-width: 600px) {
+            .video-container {
+                padding: 10px;
+            }
+        }
+    </style>
 </head>
 <body>
 
-  <!-- Video usando Plyr -->
-  <video
-    id="player"
-    class="plyr"
-    playsinline
-    controls
-    autoplay
-    muted
-    loop
-  >
-    <source src="/static/videos/Carta_TK/Carta_TK.mp4" type="video/mp4" />
-    <!-- Mensaje si no soporta video -->
-    Tu navegador no soporta la reproducción del video.
-  </video>
+    <div class="video-container">
+        <video autoplay muted>
+          <source src="{{ url_for('static', filename='videos/Carta_TK.mp4') }}" type="video/mp4">
+        </video>
 
-  <!-- JS Plyr desde CDN -->
-  <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
-  <script>
-    const player = new Plyr('#player', {
-      // Opciones disponibles: https://github.com/sampotts/plyr#options
-      controls: [
-        'play-large', // Botón grande
-        'play',
-        'progress',
-        'current-time',
-        'mute',
-        'volume',
-        'captions',
-        'settings',
-        'fullscreen',
-      ],
-      // Puedes añadir más opciones si quieres
-    });
-  </script>
+    </div>
 
 </body>
 </html>

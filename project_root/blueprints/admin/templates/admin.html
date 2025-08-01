@@ -175,6 +175,11 @@
       background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.1) 100%);
     }
 
+    .file-btn.file-selected {
+      background: linear-gradient(135deg, rgba(110, 231, 183, 0.5) 0%, rgba(52, 211, 153, 0.4) 100%);
+      border-color: rgba(110, 231, 183, 0.8);
+    }
+
     .inline-form {
       display: flex;
       flex-direction: column;
@@ -448,16 +453,15 @@
     <input type="text" name="nombre" placeholder="Nombre tarjeta (igual a carpeta)" id="nombreTarjeta" required />
     <!-- Imagen -->
     <input type="file" id="imagen" name="imagen" accept="image/*" class="submit" required hidden>
-    <button type="button" onclick="document.getElementById('imagen').click()">Abrir imagen</button>
+    <button type="button" class="file-btn" onclick="document.getElementById('imagen').click()">Abrir imagen</button>
 
     <!-- Archivo HTML -->
     <input type="file" id="archivo_html" name="archivo_html" accept=".html" class="submit" required hidden>
-    <button type="button" onclick="document.getElementById('archivo_html').click()">Abrir archivo HTML</button>
+    <button type="button" class="file-btn" onclick="document.getElementById('archivo_html').click()">Abrir archivo HTML</button>
 
     <!-- Video -->
-    <input type="file" id="video" name="video" accept="video/*" class="submit">
-    <button type="button" onclick="document.getElementById('video').click()">Abrir video</button>
-
+    <input type="file" id="video" name="video" accept="video/*" class="submit" hidden>
+    <button type="button" class="file-btn" onclick="document.getElementById('video').click()">Abrir video</button>
     <fieldset>
       <legend>Grupos asignados</legend>
       {% for grupo in grupos %}
@@ -469,6 +473,18 @@
   </section>
 
   <script>
+    // Handle file selection changes
+    document.querySelectorAll('input[type="file"]').forEach(input => {
+      input.addEventListener('change', function() {
+        const button = this.nextElementSibling;
+        if(this.files.length > 0) {
+          button.classList.add('file-selected');
+        } else {
+          button.classList.remove('file-selected');
+        }
+      });
+    });
+
     // Evitar usar "admin" como nombre de carpeta para tarjetas - validación frontend.
     document.getElementById('crearTarjetaForm').addEventListener('submit', function(e) {
       const nombre = document.getElementById('nombreTarjeta').value.trim().toLowerCase();

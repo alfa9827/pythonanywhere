@@ -159,7 +159,7 @@ class Config:
 --- Tabla: usuarios ---
 Columnas: id, username, password_hash
 (1, 'admin', '$2b$12$hNe3CvhFWS7nOzKQUrdsoOC5IOvQlFsM9YV8/YjrpDeqKhY5U/d5W')
-(3, 'rose', '$2b$12$pfNachJdzUMxBfLCertM2./r/gBb71lNhKfSiqAZSpAoxu4ZHiuvu')
+(3, 'rose', '$2b$12$K4zVSIU4LrcaBhDEelEY6Oq2hwWH.Kyej74Nd2VWj8JRn/dlkA7.K')
 
 --- Tabla: grupos ---
 Columnas: id, nombre
@@ -168,11 +168,12 @@ Columnas: id, nombre
 
 --- Tabla: tarjetas ---
 Columnas: id, nombre, imagen_url, carpeta, archivo_html
-(1, 'Corazon 3D V', '/images/corazon3dv.jpg', 'Corazon3DV', 'Corazon3DV.html')
-(2, 'admin', '/images/admin.jpg', 'admin', 'admin.html')
+(1, 'Corazon3DV', 'images/Corazon3DV.jpg', 'Corazon3DV', 'Corazon3DV.html')
+(2, 'admin', 'images/admin.jpg', 'admin', 'admin.html')
 (3, 'Corazon PRGB', 'images/Corazon_PRGB.jpg', 'Corazon_PRGB', 'Corazon_PRGB.html')
 (4, 'Flor_AN', 'images/Flor_AN.jpg', 'Flor_AN', 'Flor_AN.html')
 (5, 'Flor_AP', 'images/Flor_AP.jpg', 'Flor_AP', 'Flor_AP.html')
+(6, 'Carta_TK', 'images/Carta_TK.jpg', 'Carta_TK', 'Carta_TK.html')
 
 --- Tabla: usuarios_grupos ---
 Columnas: usuario_id, grupo_id
@@ -191,6 +192,8 @@ Columnas: grupo_id, tarjeta_id
 (1, 4)
 (2, 5)
 (1, 5)
+(2, 6)
+(1, 6)
 
 
 ===== extensions.py =====
@@ -460,7 +463,7 @@ class Config:
 --- Tabla: usuarios ---
 Columnas: id, username, password_hash
 (1, 'admin', '$2b$12$hNe3CvhFWS7nOzKQUrdsoOC5IOvQlFsM9YV8/YjrpDeqKhY5U/d5W')
-(3, 'rose', '$2b$12$pfNachJdzUMxBfLCertM2./r/gBb71lNhKfSiqAZSpAoxu4ZHiuvu')
+(3, 'rose', '$2b$12$K4zVSIU4LrcaBhDEelEY6Oq2hwWH.Kyej74Nd2VWj8JRn/dlkA7.K')
 
 --- Tabla: grupos ---
 Columnas: id, nombre
@@ -469,11 +472,12 @@ Columnas: id, nombre
 
 --- Tabla: tarjetas ---
 Columnas: id, nombre, imagen_url, carpeta, archivo_html
-(1, 'Corazon 3D V', '/images/corazon3dv.jpg', 'Corazon3DV', 'Corazon3DV.html')
-(2, 'admin', '/images/admin.jpg', 'admin', 'admin.html')
+(1, 'Corazon3DV', 'images/Corazon3DV.jpg', 'Corazon3DV', 'Corazon3DV.html')
+(2, 'admin', 'images/admin.jpg', 'admin', 'admin.html')
 (3, 'Corazon PRGB', 'images/Corazon_PRGB.jpg', 'Corazon_PRGB', 'Corazon_PRGB.html')
 (4, 'Flor_AN', 'images/Flor_AN.jpg', 'Flor_AN', 'Flor_AN.html')
 (5, 'Flor_AP', 'images/Flor_AP.jpg', 'Flor_AP', 'Flor_AP.html')
+(6, 'Carta_TK', 'images/Carta_TK.jpg', 'Carta_TK', 'Carta_TK.html')
 
 --- Tabla: usuarios_grupos ---
 Columnas: usuario_id, grupo_id
@@ -492,6 +496,8 @@ Columnas: grupo_id, tarjeta_id
 (1, 4)
 (2, 5)
 (1, 5)
+(2, 6)
+(1, 6)
 
 
 ===== extensions.py =====
@@ -765,6 +771,7 @@ def crear_tarjeta():
 
     imagen = request.files.get('imagen')
     html_file = request.files.get('archivo_html')
+    video_file = request.files.get('video')
     grupo_ids = request.form.getlist('grupo_ids')
 
     if not nombre or not imagen or not html_file:
@@ -789,6 +796,11 @@ def crear_tarjeta():
     if not html_filename.endswith('.html'):
         flash('El archivo HTML debe terminar en .html', 'danger')
         return redirect(url_for('admin.index'))
+
+    # Guardar video
+    video_filename = secure_filename(video_file.filename)
+    video_path = os.path.join(template_folder, video_filename)
+    video_file.save(video_path)
 
     # Crear archivos __init__.py y main.py
     clean_nombre = nombre.strip()
@@ -1208,6 +1220,11 @@ from . import routes
       background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.1) 100%);
     }
 
+    .file-btn.file-selected {
+      background: linear-gradient(135deg, rgba(110, 231, 183, 0.5) 0%, rgba(52, 211, 153, 0.4) 100%);
+      border-color: rgba(110, 231, 183, 0.8);
+    }
+
     .inline-form {
       display: flex;
       flex-direction: column;
@@ -1221,7 +1238,7 @@ from . import routes
       width: 100%;
     }
 
-    @media (min-width: 640px) {
+    @media (min-width: 840px) {
       .inline-form {
         flex-direction: row;
         gap: 1rem;
@@ -1473,25 +1490,46 @@ from . import routes
         </tbody>
       </table>
     </div>
+  </section>
 
-    <h3>Crear Tarjeta Nueva</h3>
-    <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin.crear_tarjeta') }}" class="max-w-lg inline-form" id="crearTarjetaForm">
-      <input type="text" name="nombre" placeholder="Nombre tarjeta (igual a carpeta)" id="nombreTarjeta" required />
-      <input type="file" name="imagen" accept="image/*" required
-             class="w-full p-3 rounded-lg border border-gray-300 bg-gray-800 text-white file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-700 file:text-white hover:file:bg-gray-600 hover:file:shadow-md file:transition-all file:duration-200 file:cursor-pointer" />
-      <input type="file" name="archivo_html" accept=".html" required
-             class="w-full p-3 rounded-lg border border-gray-300 bg-gray-800 text-white file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-700 file:text-white hover:file:bg-gray-600 hover:file:shadow-md file:transition-all file:duration-200 file:cursor-pointer" />
-      <fieldset>
-        <legend>Grupos asignados</legend>
-        {% for grupo in grupos %}
-          <label><input type="checkbox" name="grupo_ids" value="{{ grupo.id }}"> {{ grupo.nombre }}</label><br>
-        {% endfor %}
-      </fieldset>
-      <button type="submit">Crear Tarjeta</button>
-    </form>
+  <section tabindex="0">
+  <h3>Crear Tarjeta Nueva</h3>
+  <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin.crear_tarjeta') }}" class="max-w-lg inline-form" id="crearTarjetaForm">
+    <input type="text" name="nombre" placeholder="Nombre tarjeta (igual a carpeta)" id="nombreTarjeta" required />
+    <!-- Imagen -->
+    <input type="file" id="imagen" name="imagen" accept="image/*" class="submit" required hidden>
+    <button type="button" class="file-btn" onclick="document.getElementById('imagen').click()">Abrir imagen</button>
+
+    <!-- Archivo HTML -->
+    <input type="file" id="archivo_html" name="archivo_html" accept=".html" class="submit" required hidden>
+    <button type="button" class="file-btn" onclick="document.getElementById('archivo_html').click()">Abrir archivo HTML</button>
+
+    <!-- Video -->
+    <input type="file" id="video" name="video" accept="video/*" class="submit" hidden>
+    <button type="button" class="file-btn" onclick="document.getElementById('video').click()">Abrir video</button>
+    <fieldset>
+      <legend>Grupos asignados</legend>
+      {% for grupo in grupos %}
+        <label><input type="checkbox" name="grupo_ids" value="{{ grupo.id }}"> {{ grupo.nombre }}</label><br>
+      {% endfor %}
+    </fieldset>
+    <button type="submit">Crear Tarjeta</button>
+  </form>
   </section>
 
   <script>
+    // Handle file selection changes
+    document.querySelectorAll('input[type="file"]').forEach(input => {
+      input.addEventListener('change', function() {
+        const button = this.nextElementSibling;
+        if(this.files.length > 0) {
+          button.classList.add('file-selected');
+        } else {
+          button.classList.remove('file-selected');
+        }
+      });
+    });
+
     // Evitar usar "admin" como nombre de carpeta para tarjetas - validación frontend.
     document.getElementById('crearTarjetaForm').addEventListener('submit', function(e) {
       const nombre = document.getElementById('nombreTarjeta').value.trim().toLowerCase();
@@ -1504,6 +1542,93 @@ from . import routes
 </body>
 </html>
 
+===== blueprints\Carta_TK\main.py =====
+
+
+import os
+from flask import abort, render_template
+from . import carta_tk_bp
+from flask_login import login_required
+
+@carta_tk_bp.route('/')
+@login_required
+def mostrar_archivo():
+    archivo_html = 'Carta_TK.html'
+
+    # Validaciones de seguridad
+    if not archivo_html.endswith('.html'):
+        abort(404)
+    safe_path = os.path.normpath(archivo_html)
+    if '..' in safe_path or os.path.isabs(safe_path):
+        abort(404)
+
+    try:
+        return render_template(archivo_html)
+    except:
+        abort(404)
+
+
+===== blueprints\Carta_TK\__init__.py =====
+
+
+from flask import Blueprint
+
+carta_tk_bp = Blueprint(
+    'Carta_TK',
+    __name__,
+    url_prefix='/carta_tk',
+    template_folder='templates'
+)
+
+from . import main
+
+
+===== blueprints\Carta_TK\templates\Carta_TK.html =====
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video</title>
+    <style>
+        body {
+            background: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .video-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        @media (max-width: 600px) {
+            .video-container {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="video-container">
+        <video autoplay muted>
+        <source src="Carta_TK.mp4" type="video/mp4">
+        </video>
+    </div>
+
+</body>
+</html>
 
 ===== blueprints\Corazon3DV\main.py =====
 
