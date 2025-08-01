@@ -38,12 +38,14 @@ def get_all_tarjeta_carpetas():
     return [f for f in os.listdir(base_blueprints)
             if os.path.isdir(os.path.join(base_blueprints, f))]
 
+base_dir = os.path.abspath(os.path.dirname(__file__))
 app.jinja_loader = ChoiceLoader([
     app.jinja_loader,
     FileSystemLoader([
-        os.path.join('blueprints', carpeta, 'templates') for carpeta in get_all_tarjeta_carpetas()
+        os.path.join(base_dir, 'blueprints', carpeta, 'templates') for carpeta in get_all_tarjeta_carpetas()
     ])
 ])
+
 
 # 📄 Página de error 403
 @app.errorhandler(403)
@@ -116,9 +118,3 @@ def mostrar_tarjeta_generica(carpeta, archivo_html):
         app.logger.error(f'Error renderizando {archivo_html} en carpeta {carpeta}: {e}')
         abort(404)
 
-
-# 🚀 Ejecutar la aplicación
-if __name__ == '__main__':
-    with app.app_context():
-        pass  # Aquí puedes agregar inicializaciones adicionales si es necesario
-    app.run(debug=True)  # En producción, debug=False
