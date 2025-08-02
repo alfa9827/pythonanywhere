@@ -1,0 +1,6 @@
+# Ignorar archivos compilados por Python
+__pycache__/
+*.pyc
+
+# Ignorar base de datos SQLite
+project_root/database.db
