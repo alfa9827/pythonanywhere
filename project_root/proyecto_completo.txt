@@ -1,0 +1,5124 @@
+
+
+===== app.py =====
+
+import logging
+import os
+from flask import Flask, render_template, redirect, url_for, request, flash, abort
+from flask_login import LoginManager, login_user, login_required, logout_user, current_user
+from config import Config
+from extensions import db, bcrypt
+from models import Usuario, Grupo
+from blueprints.admin import admin_bp
+from jinja2 import ChoiceLoader, FileSystemLoader
+
+
+
+# 🔧 Configuración inicial de la aplicación
+app = Flask(__name__)
+app.config.from_object(Config)
+
+db.init_app(app)
+bcrypt.init_app(app)
+
+# 🔐 Configuración de login
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
+login_manager.login_message_category = "info"
+
+# 🧠 Cargar usuario
+@login_manager.user_loader
+def load_user(user_id):
+    return Usuario.query.get(int(user_id))
+
+# 🔧 Configurar logging
+logging.basicConfig(level=logging.INFO)
+
+# 📦 Registrar blueprint del admin
+app.register_blueprint(admin_bp)
+
+def get_all_tarjeta_carpetas():
+    base_blueprints = os.path.join(os.path.dirname(__file__), 'blueprints')
+    return [f for f in os.listdir(base_blueprints)
+            if os.path.isdir(os.path.join(base_blueprints, f))]
+
+app.jinja_loader = ChoiceLoader([
+    app.jinja_loader,
+    FileSystemLoader([
+        os.path.join('blueprints', carpeta, 'templates') for carpeta in get_all_tarjeta_carpetas()
+    ])
+])
+
+# 📄 Página de error 403
+@app.errorhandler(403)
+def error_403(error):
+    return render_template('errors/403.html'), 403
+
+# 📄 Página de error 404
+@app.errorhandler(404)
+def error_404(error):
+    return render_template('errors/404.html'), 404
+
+# 📄 Página de error 500
+@app.errorhandler(500)
+def error_500(error):
+    return render_template('errors/500.html'), 500
+
+# 🔐 Login
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        user = Usuario.query.filter_by(username=username).first()
+        if user and user.verificar_password(password):
+            login_user(user)
+            flash('Has iniciado sesión correctamente', 'success')
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('dashboard'))
+        else:
+            flash('Usuario o contraseña incorrectos', 'danger')
+    return render_template('login.html')
+
+# 🔐 Logout
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('Has cerrado sesión con éxito.', 'info')
+    return redirect(url_for('login'))
+
+# 📊 Panel de control
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    tarjetas = set()
+    for grupo in current_user.grupos:
+        tarjetas.update(grupo.tarjetas)
+    return render_template('dashboard.html', tarjetas=tarjetas)
+
+# 🗂️ Mostrar tarjetas generadas dinámicamente
+@app.route("/tarjetas/<carpeta>/<archivo_html>")
+@login_required
+def mostrar_tarjeta_generica(carpeta, archivo_html):
+    if carpeta.lower() == 'admin':
+        abort(404)
+
+    if not archivo_html.endswith('.html') or '/' in archivo_html or '..' in carpeta or '..' in archivo_html:
+        abort(404)
+
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    template_folder = os.path.join(base_dir, 'blueprints', carpeta, 'templates')
+    filepath = os.path.join(template_folder, archivo_html)
+    if not os.path.isfile(filepath):
+        abort(404)
+    try:
+        return render_template(archivo_html)  # Sólo archivo, el loader busca en las carpetas ajustadas
+    except Exception as e:
+        app.logger.error(f'Error renderizando {archivo_html} en carpeta {carpeta}: {e}')
+        abort(404)
+
+
+# 🚀 Ejecutar la aplicación
+if __name__ == '__main__':
+    with app.app_context():
+        pass  # Aquí puedes agregar inicializaciones adicionales si es necesario
+    app.run(debug=True)  # En producción, debug=False
+
+
+===== config.py =====
+
+import os
+
+class Config:
+    # Clave secreta para sesiones y CSRF (debe ser segura en producción)
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'cambia_por_una_clave_muy_segura_1234'
+
+    # URI de conexión a la base de datos SQLite en archivo local
+    BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
+        'sqlite:///' + os.path.join(BASE_DIR, 'database.db')
+
+    # Evita señales innecesarias (mejora rendimiento)
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Otras configuraciones útiles
+    # Tiempo de sesión en segundos (por ejemplo 1 día)
+    PERMANENT_SESSION_LIFETIME = 86400  # 24h en segundos
+
+    # Configuración para subir archivos (si llegas a implementar)
+    # UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
+    # MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # Límite de 16MB
+
+
+===== database.db (contenido de la base de datos) =====
+
+
+--- Tabla: usuarios ---
+Columnas: id, username, password_hash
+(1, 'admin', '$2b$12$hNe3CvhFWS7nOzKQUrdsoOC5IOvQlFsM9YV8/YjrpDeqKhY5U/d5W')
+(3, 'rose', '$2b$12$K4zVSIU4LrcaBhDEelEY6Oq2hwWH.Kyej74Nd2VWj8JRn/dlkA7.K')
+
+--- Tabla: grupos ---
+Columnas: id, nombre
+(1, 'admin')
+(2, 'alfa')
+
+--- Tabla: tarjetas ---
+Columnas: id, nombre, imagen_url, carpeta, archivo_html
+(1, 'Corazon3DV', 'images/Corazon3DV.jpg', 'Corazon3DV', 'Corazon3DV.html')
+(2, 'admin', 'images/admin.jpg', 'admin', 'admin.html')
+(3, 'Corazon PRGB', 'images/Corazon_PRGB.jpg', 'Corazon_PRGB', 'Corazon_PRGB.html')
+(4, 'Flor_AN', 'images/Flor_AN.jpg', 'Flor_AN', 'Flor_AN.html')
+(5, 'Flor_AP', 'images/Flor_AP.jpg', 'Flor_AP', 'Flor_AP.html')
+(6, 'Carta_TK', 'images/Carta_TK.jpg', 'Carta_TK', 'Carta_TK.html')
+
+--- Tabla: usuarios_grupos ---
+Columnas: usuario_id, grupo_id
+(1, 1)
+(1, 2)
+(3, 2)
+
+--- Tabla: acceso_tarjetas_grupos ---
+Columnas: grupo_id, tarjeta_id
+(1, 1)
+(1, 2)
+(2, 1)
+(2, 3)
+(1, 3)
+(2, 4)
+(1, 4)
+(2, 5)
+(1, 5)
+(2, 6)
+(1, 6)
+
+
+===== extensions.py =====
+
+from flask_sqlalchemy import SQLAlchemy
+from flask_bcrypt import Bcrypt
+
+# Instancias globales sin app aún ligada
+db = SQLAlchemy()
+bcrypt = Bcrypt()
+
+
+===== init_db.py =====
+
+from app import app, db, bcrypt
+from models import Usuario, Grupo, Tarjeta
+
+
+def create_initial_data():
+    pw_hash = bcrypt.generate_password_hash("mortadela1326").decode('utf-8')
+
+    # Crea usuario administrador
+    admin = Usuario(username='admin', password_hash=pw_hash)
+
+    # Crear grupo inicial
+    grupo1 = Grupo(nombre='Grupo 1')
+
+    # Crear tarjeta ejemplo
+    tarjeta1 = Tarjeta(
+        nombre='Tarjeta Ejemplo',
+        imagen_url='/blueprints/Corazon3DV/Corazon3DV.jpg',  # Ruta absoluta o relativa según config de Flask
+        carpeta='Corazon3DV'  # Nombre carpeta blueprint
+    )
+
+    # Relacionamos admin con el grupo y grupo con la tarjeta
+    admin.grupos.append(grupo1)
+    grupo1.tarjetas.append(tarjeta1)
+
+    # Guardamos todo en la base de datos
+    db.session.add_all([admin, grupo1, tarjeta1])
+    db.session.commit()
+    print("Datos iniciales insertados exitosamente.")
+
+
+if __name__ == "__main__":
+    with app.app_context():
+        # Crear todas las tablas (si no existen)
+        db.create_all()
+        # Insertar datos iniciales
+        create_initial_data()
+
+
+===== models.py =====
+
+from flask_login import UserMixin
+from extensions import db
+
+usuarios_grupos = db.Table(
+    'usuarios_grupos',
+    db.Column('usuario_id', db.Integer, db.ForeignKey('usuarios.id'), primary_key=True),
+    db.Column('grupo_id', db.Integer, db.ForeignKey('grupos.id'), primary_key=True)
+)
+
+acceso_tarjetas_grupos = db.Table(
+    'acceso_tarjetas_grupos',
+    db.Column('grupo_id', db.Integer, db.ForeignKey('grupos.id'), primary_key=True),
+    db.Column('tarjeta_id', db.Integer, db.ForeignKey('tarjetas.id'), primary_key=True)
+)
+
+class Usuario(db.Model, UserMixin):
+    __tablename__ = 'usuarios'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    grupos = db.relationship('Grupo', secondary=usuarios_grupos, back_populates='usuarios')
+
+    def __repr__(self):
+        return f'<Usuario {self.username}>'
+
+    def verificar_password(self, password):
+        from app import bcrypt
+        return bcrypt.check_password_hash(self.password_hash, password)
+
+class Grupo(db.Model):
+    __tablename__ = 'grupos'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(80), unique=True, nullable=False)
+    usuarios = db.relationship('Usuario', secondary=usuarios_grupos, back_populates='grupos')
+    tarjetas = db.relationship('Tarjeta', secondary=acceso_tarjetas_grupos, back_populates='grupos')
+
+    def __repr__(self):
+        return f'<Grupo {self.nombre}>'
+
+class Tarjeta(db.Model):
+    __tablename__ = 'tarjetas'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), nullable=False)
+    imagen_url = db.Column(db.String(200), nullable=False)
+    carpeta = db.Column(db.String(100), nullable=False)
+    archivo_html = db.Column(db.String(200), nullable=False)
+    grupos = db.relationship('Grupo', secondary='acceso_tarjetas_grupos', back_populates='tarjetas')
+
+    def __repr__(self):
+        return f'<Tarjeta {self.nombre}>'
+
+
+===== proyecto_completo.txt =====
+
+
+
+===== app.py =====
+
+import logging
+import os
+from flask import Flask, render_template, redirect, url_for, request, flash, abort
+from flask_login import LoginManager, login_user, login_required, logout_user, current_user
+from config import Config
+from extensions import db, bcrypt
+from models import Usuario, Grupo
+from blueprints.admin import admin_bp
+from jinja2 import ChoiceLoader, FileSystemLoader
+
+
+
+# 🔧 Configuración inicial de la aplicación
+app = Flask(__name__)
+app.config.from_object(Config)
+
+db.init_app(app)
+bcrypt.init_app(app)
+
+# 🔐 Configuración de login
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
+login_manager.login_message_category = "info"
+
+# 🧠 Cargar usuario
+@login_manager.user_loader
+def load_user(user_id):
+    return Usuario.query.get(int(user_id))
+
+# 🔧 Configurar logging
+logging.basicConfig(level=logging.INFO)
+
+# 📦 Registrar blueprint del admin
+app.register_blueprint(admin_bp)
+
+def get_all_tarjeta_carpetas():
+    base_blueprints = os.path.join(os.path.dirname(__file__), 'blueprints')
+    return [f for f in os.listdir(base_blueprints)
+            if os.path.isdir(os.path.join(base_blueprints, f))]
+
+app.jinja_loader = ChoiceLoader([
+    app.jinja_loader,
+    FileSystemLoader([
+        os.path.join('blueprints', carpeta, 'templates') for carpeta in get_all_tarjeta_carpetas()
+    ])
+])
+
+# 📄 Página de error 403
+@app.errorhandler(403)
+def error_403(error):
+    return render_template('errors/403.html'), 403
+
+# 📄 Página de error 404
+@app.errorhandler(404)
+def error_404(error):
+    return render_template('errors/404.html'), 404
+
+# 📄 Página de error 500
+@app.errorhandler(500)
+def error_500(error):
+    return render_template('errors/500.html'), 500
+
+# 🔐 Login
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        user = Usuario.query.filter_by(username=username).first()
+        if user and user.verificar_password(password):
+            login_user(user)
+            flash('Has iniciado sesión correctamente', 'success')
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('dashboard'))
+        else:
+            flash('Usuario o contraseña incorrectos', 'danger')
+    return render_template('login.html')
+
+# 🔐 Logout
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('Has cerrado sesión con éxito.', 'info')
+    return redirect(url_for('login'))
+
+# 📊 Panel de control
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    tarjetas = set()
+    for grupo in current_user.grupos:
+        tarjetas.update(grupo.tarjetas)
+    return render_template('dashboard.html', tarjetas=tarjetas)
+
+# 🗂️ Mostrar tarjetas generadas dinámicamente
+@app.route("/tarjetas/<carpeta>/<archivo_html>")
+@login_required
+def mostrar_tarjeta_generica(carpeta, archivo_html):
+    if carpeta.lower() == 'admin':
+        abort(404)
+
+    if not archivo_html.endswith('.html') or '/' in archivo_html or '..' in carpeta or '..' in archivo_html:
+        abort(404)
+
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    template_folder = os.path.join(base_dir, 'blueprints', carpeta, 'templates')
+    filepath = os.path.join(template_folder, archivo_html)
+    if not os.path.isfile(filepath):
+        abort(404)
+    try:
+        return render_template(archivo_html)  # Sólo archivo, el loader busca en las carpetas ajustadas
+    except Exception as e:
+        app.logger.error(f'Error renderizando {archivo_html} en carpeta {carpeta}: {e}')
+        abort(404)
+
+
+# 🚀 Ejecutar la aplicación
+if __name__ == '__main__':
+    with app.app_context():
+        pass  # Aquí puedes agregar inicializaciones adicionales si es necesario
+    app.run(debug=True)  # En producción, debug=False
+
+
+===== config.py =====
+
+import os
+
+class Config:
+    # Clave secreta para sesiones y CSRF (debe ser segura en producción)
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'cambia_por_una_clave_muy_segura_1234'
+
+    # URI de conexión a la base de datos SQLite en archivo local
+    BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
+        'sqlite:///' + os.path.join(BASE_DIR, 'database.db')
+
+    # Evita señales innecesarias (mejora rendimiento)
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Otras configuraciones útiles
+    # Tiempo de sesión en segundos (por ejemplo 1 día)
+    PERMANENT_SESSION_LIFETIME = 86400  # 24h en segundos
+
+    # Configuración para subir archivos (si llegas a implementar)
+    # UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
+    # MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # Límite de 16MB
+
+
+===== database.db (contenido de la base de datos) =====
+
+
+--- Tabla: usuarios ---
+Columnas: id, username, password_hash
+(1, 'admin', '$2b$12$hNe3CvhFWS7nOzKQUrdsoOC5IOvQlFsM9YV8/YjrpDeqKhY5U/d5W')
+(3, 'rose', '$2b$12$K4zVSIU4LrcaBhDEelEY6Oq2hwWH.Kyej74Nd2VWj8JRn/dlkA7.K')
+
+--- Tabla: grupos ---
+Columnas: id, nombre
+(1, 'admin')
+(2, 'alfa')
+
+--- Tabla: tarjetas ---
+Columnas: id, nombre, imagen_url, carpeta, archivo_html
+(1, 'Corazon3DV', 'images/Corazon3DV.jpg', 'Corazon3DV', 'Corazon3DV.html')
+(2, 'admin', 'images/admin.jpg', 'admin', 'admin.html')
+(3, 'Corazon PRGB', 'images/Corazon_PRGB.jpg', 'Corazon_PRGB', 'Corazon_PRGB.html')
+(4, 'Flor_AN', 'images/Flor_AN.jpg', 'Flor_AN', 'Flor_AN.html')
+(5, 'Flor_AP', 'images/Flor_AP.jpg', 'Flor_AP', 'Flor_AP.html')
+(6, 'Carta_TK', 'images/Carta_TK.jpg', 'Carta_TK', 'Carta_TK.html')
+
+--- Tabla: usuarios_grupos ---
+Columnas: usuario_id, grupo_id
+(1, 1)
+(1, 2)
+(3, 2)
+
+--- Tabla: acceso_tarjetas_grupos ---
+Columnas: grupo_id, tarjeta_id
+(1, 1)
+(1, 2)
+(2, 1)
+(2, 3)
+(1, 3)
+(2, 4)
+(1, 4)
+(2, 5)
+(1, 5)
+(2, 6)
+(1, 6)
+
+
+===== extensions.py =====
+
+from flask_sqlalchemy import SQLAlchemy
+from flask_bcrypt import Bcrypt
+
+# Instancias globales sin app aún ligada
+db = SQLAlchemy()
+bcrypt = Bcrypt()
+
+
+===== init_db.py =====
+
+from app import app, db, bcrypt
+from models import Usuario, Grupo, Tarjeta
+
+
+def create_initial_data():
+    pw_hash = bcrypt.generate_password_hash("mortadela1326").decode('utf-8')
+
+    # Crea usuario administrador
+    admin = Usuario(username='admin', password_hash=pw_hash)
+
+    # Crear grupo inicial
+    grupo1 = Grupo(nombre='Grupo 1')
+
+    # Crear tarjeta ejemplo
+    tarjeta1 = Tarjeta(
+        nombre='Tarjeta Ejemplo',
+        imagen_url='/blueprints/Corazon3DV/Corazon3DV.jpg',  # Ruta absoluta o relativa según config de Flask
+        carpeta='Corazon3DV'  # Nombre carpeta blueprint
+    )
+
+    # Relacionamos admin con el grupo y grupo con la tarjeta
+    admin.grupos.append(grupo1)
+    grupo1.tarjetas.append(tarjeta1)
+
+    # Guardamos todo en la base de datos
+    db.session.add_all([admin, grupo1, tarjeta1])
+    db.session.commit()
+    print("Datos iniciales insertados exitosamente.")
+
+
+if __name__ == "__main__":
+    with app.app_context():
+        # Crear todas las tablas (si no existen)
+        db.create_all()
+        # Insertar datos iniciales
+        create_initial_data()
+
+
+===== models.py =====
+
+from flask_login import UserMixin
+from extensions import db
+
+usuarios_grupos = db.Table(
+    'usuarios_grupos',
+    db.Column('usuario_id', db.Integer, db.ForeignKey('usuarios.id'), primary_key=True),
+    db.Column('grupo_id', db.Integer, db.ForeignKey('grupos.id'), primary_key=True)
+)
+
+acceso_tarjetas_grupos = db.Table(
+    'acceso_tarjetas_grupos',
+    db.Column('grupo_id', db.Integer, db.ForeignKey('grupos.id'), primary_key=True),
+    db.Column('tarjeta_id', db.Integer, db.ForeignKey('tarjetas.id'), primary_key=True)
+)
+
+class Usuario(db.Model, UserMixin):
+    __tablename__ = 'usuarios'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    grupos = db.relationship('Grupo', secondary=usuarios_grupos, back_populates='usuarios')
+
+    def __repr__(self):
+        return f'<Usuario {self.username}>'
+
+    def verificar_password(self, password):
+        from app import bcrypt
+        return bcrypt.check_password_hash(self.password_hash, password)
+
+class Grupo(db.Model):
+    __tablename__ = 'grupos'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(80), unique=True, nullable=False)
+    usuarios = db.relationship('Usuario', secondary=usuarios_grupos, back_populates='grupos')
+    tarjetas = db.relationship('Tarjeta', secondary=acceso_tarjetas_grupos, back_populates='grupos')
+
+    def __repr__(self):
+        return f'<Grupo {self.nombre}>'
+
+class Tarjeta(db.Model):
+    __tablename__ = 'tarjetas'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), nullable=False)
+    imagen_url = db.Column(db.String(200), nullable=False)
+    carpeta = db.Column(db.String(100), nullable=False)
+    archivo_html = db.Column(db.String(200), nullable=False)
+    grupos = db.relationship('Grupo', secondary='acceso_tarjetas_grupos', back_populates='tarjetas')
+
+    def __repr__(self):
+        return f'<Tarjeta {self.nombre}>'
+
+
+===== utils.py =====
+
+import os
+import logging
+from app import db, bcrypt
+from models import Usuario, Grupo, Tarjeta
+import os
+
+logging.basicConfig(level=logging.INFO)
+
+def crear_usuario(username: str, password: str) -> Usuario:
+    if Usuario.query.filter_by(username=username).first():
+        raise ValueError(f"El usuario '{username}' ya existe.")
+
+    pw_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+    usuario = Usuario(username=username, password_hash=pw_hash)
+    db.session.add(usuario)
+    try:
+        db.session.commit()
+        logging.info(f"Usuario '{username}' creado.")
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Error creando usuario '{username}': {e}")
+        raise
+    return usuario
+
+def crear_grupo(nombre: str) -> Grupo:
+    if Grupo.query.filter_by(nombre=nombre).first():
+        raise ValueError(f"El grupo '{nombre}' ya existe.")
+    grupo = Grupo(nombre=nombre)
+    db.session.add(grupo)
+    try:
+        db.session.commit()
+        logging.info(f"Grupo '{nombre}' creado.")
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Error creando grupo '{nombre}': {e}")
+        raise
+    return grupo
+
+def obtener_tarjetas_desde_carpetas(base_path: str):
+    tarjetas = []
+    if not os.path.exists(base_path):
+        logging.warning(f"Base path '{base_path}' no existe.")
+        return tarjetas
+
+    for item in os.listdir(base_path):
+        ruta = os.path.join(base_path, item)
+        if os.path.isdir(ruta) and os.path.exists(os.path.join(ruta, 'main.py')):
+            tarjetas.append(item)
+    return tarjetas
+
+def sincronizar_tarjetas_db(base_path: str):
+    carpetas = obtener_tarjetas_desde_carpetas(base_path)
+    for carpeta in carpetas:
+        existencia = Tarjeta.query.filter_by(carpeta=carpeta).first()
+        if existencia:
+            continue
+        imagen_fs_path = os.path.join(base_path, carpeta, 'Corazon3DV.jpg')
+        if not os.path.isfile(imagen_fs_path):
+            logging.warning(f"No se encontró la imagen esperada: {imagen_fs_path}")
+            continue
+        imagen_url = '/'.join([base_path, carpeta, 'Corazon3DV.jpg']).replace(os.sep, '/')
+
+        tarjeta = Tarjeta(
+            nombre=carpeta.capitalize(),
+            imagen_url=imagen_url,
+            carpeta=carpeta,
+            archivo_html='index.html'
+        )
+        db.session.add(tarjeta)
+    try:
+        db.session.commit()
+        logging.info("Sincronización de tarjetas completada.")
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Error en sincronización de tarjetas: {e}")
+        raise
+
+def asignar_usuario_a_grupo(usuario: Usuario, grupo: Grupo):
+    if grupo not in usuario.grupos:
+        usuario.grupos.append(grupo)
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
+
+def remover_usuario_de_grupo(usuario: Usuario, grupo: Grupo):
+    if grupo in usuario.grupos:
+        usuario.grupos.remove(grupo)
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
+
+
+===== __init__.py =====
+
+import sqlite3
+import os
+
+nombre_db = 'database.db'
+
+if not os.path.exists(nombre_db):
+    print(f"❌ La base de datos '{nombre_db}' no se encuentra en la carpeta actual.")
+else:
+    try:
+        conn = sqlite3.connect(nombre_db)
+        cursor = conn.cursor()
+        alter_sql = """
+        ALTER TABLE tarjetas ADD COLUMN archivo_html VARCHAR(200) NOT NULL DEFAULT 'index.html';
+        """
+        cursor.execute(alter_sql)
+        conn.commit()
+        print("✅ Columna 'archivo_html' agregada correctamente a la tabla 'tarjetas'.")
+    except sqlite3.OperationalError as e:
+        print(f"⚠️ Error al ejecutar ALTER TABLE: {e}")
+    finally:
+        conn.close()
+
+
+===== blueprints\admin\routes.py =====
+
+from flask import render_template, request, redirect, url_for, flash, abort, current_app
+from flask_login import login_required, current_user
+from extensions import db
+from models import Usuario, Grupo, Tarjeta
+from . import admin_bp
+import os
+from werkzeug.utils import secure_filename
+from extensions import bcrypt
+
+def es_administrador():
+    return current_user.is_authenticated and current_user.username == 'admin'
+
+@admin_bp.before_request
+@login_required
+def verificar_admin():
+    if not es_administrador():
+        abort(403)
+
+@admin_bp.route('/', methods=['GET'])
+def index():
+    usuarios = Usuario.query.order_by(Usuario.id).all()
+    grupos = Grupo.query.order_by(Grupo.id).all()
+    tarjetas = Tarjeta.query.order_by(Tarjeta.id).all()
+    return render_template('admin.html', usuarios=usuarios, grupos=grupos, tarjetas=tarjetas)
+
+@admin_bp.route('/test')
+def test():
+    return "Ruta de prueba en admin"
+
+@admin_bp.route('/tarjetas/crear', methods=['POST'])
+def crear_tarjeta():
+    import textwrap
+
+    nombre = request.form.get('nombre', '').strip()
+
+    # Bloquear uso de carpeta 'admin'
+    if nombre.lower() == 'admin':
+        flash("No es permitido usar 'admin' como nombre de carpeta para una tarjeta.", "danger")
+        return redirect(url_for('admin.index'))
+
+    imagen = request.files.get('imagen')
+    html_file = request.files.get('archivo_html')
+    video_file = request.files.get('video')
+    grupo_ids = request.form.getlist('grupo_ids')
+
+    if not nombre or not imagen or not html_file:
+        flash('Debes ingresar todos los campos y archivos requeridos', 'warning')
+        return redirect(url_for('admin.index'))
+
+    # Guardar Imagen en /static/images
+    image_filename = secure_filename(imagen.filename)
+    image_path = os.path.join(current_app.static_folder, 'images', image_filename)
+    imagen.save(image_path)
+    imagen_url = f'images/{image_filename}'
+
+    # Crear carpeta de blueprint y guardar HTML
+    blueprint_folder = os.path.join('blueprints', nombre)
+    template_folder = os.path.join(blueprint_folder, 'templates')
+    os.makedirs(template_folder, exist_ok=True)
+
+    html_filename = secure_filename(html_file.filename)
+    html_path = os.path.join(template_folder, html_filename)
+    html_file.save(html_path)
+
+    if not html_filename.endswith('.html'):
+        flash('El archivo HTML debe terminar en .html', 'danger')
+        return redirect(url_for('admin.index'))
+
+    # Guardar video
+    video_filename = secure_filename(video_file.filename)
+    video_path = os.path.join(template_folder, video_filename)
+    video_file.save(video_path)
+
+    # Crear archivos __init__.py y main.py
+    clean_nombre = nombre.strip()
+    blueprint_var = clean_nombre.lower() + '_bp'
+    url_prefix = '/' + clean_nombre.lower()
+
+    # __init__.py
+    init_file_path = os.path.join(blueprint_folder, '__init__.py')
+    init_content = f'''
+    from flask import Blueprint
+
+    {blueprint_var} = Blueprint(
+        '{clean_nombre}',
+        __name__,
+        url_prefix='{url_prefix}',
+        template_folder='templates'
+    )
+
+    from . import main
+    '''
+    with open(init_file_path, 'w', encoding='utf-8') as f:
+        f.write(textwrap.dedent(init_content))
+
+    # main.py
+    main_file_path = os.path.join(blueprint_folder, 'main.py')
+    main_content = f'''
+    import os
+    from flask import abort, render_template
+    from . import {blueprint_var}
+    from flask_login import login_required
+
+    @{blueprint_var}.route('/')
+    @login_required
+    def mostrar_archivo():
+        archivo_html = '{html_filename}'
+
+        # Validaciones de seguridad
+        if not archivo_html.endswith('.html'):
+            abort(404)
+        safe_path = os.path.normpath(archivo_html)
+        if '..' in safe_path or os.path.isabs(safe_path):
+            abort(404)
+
+        try:
+            return render_template(archivo_html)
+        except:
+            abort(404)
+    '''
+    with open(main_file_path, 'w', encoding='utf-8') as f:
+        f.write(textwrap.dedent(main_content))
+
+    # Guardar en la base de datos
+    tarjeta = Tarjeta(
+        nombre=nombre,
+        carpeta=nombre,
+        imagen_url=imagen_url,
+        archivo_html=html_filename
+    )
+    grupos = Grupo.query.filter(Grupo.id.in_([int(gid) for gid in grupo_ids if gid.isdigit()])).all()
+    tarjeta.grupos = grupos
+    db.session.add(tarjeta)
+    db.session.commit()
+
+    flash(f'Tarjeta "{nombre}" creada correctamente', 'success')
+    return redirect(url_for('admin.index'))
+
+@admin_bp.route('/tarjetas/<int:tarjeta_id>/editar', methods=['POST'])
+def editar_tarjeta(tarjeta_id):
+    tarjeta = Tarjeta.query.get_or_404(tarjeta_id)
+    nombre = request.form.get('nombre', '').strip()
+    imagen_url = request.form.get('imagen_url', '').strip()
+    archivo_html = request.form.get('archivo_html', '').strip()
+    grupo_ids = request.form.getlist('grupo_ids')
+
+    if not nombre or not imagen_url or not archivo_html:
+        flash('Todos los campos son obligatorios para editar una tarjeta', 'warning')
+        return redirect(url_for('admin.index'))
+
+    blueprint_dir = os.path.join('blueprints', nombre)
+    if not os.path.isdir(blueprint_dir):
+        flash('La carpeta blueprint no existe.', 'danger')
+        return redirect(url_for('admin.index'))
+
+    image_path = os.path.join(current_app.static_folder, imagen_url)
+    if not os.path.isfile(image_path):
+        flash('La imagen especificada no existe.', 'danger')
+        return redirect(url_for('admin.index'))
+
+    tarjeta.nombre = nombre
+    tarjeta.carpeta = nombre
+    tarjeta.imagen_url = imagen_url
+    tarjeta.archivo_html = archivo_html
+
+    grupos = Grupo.query.filter(Grupo.id.in_([int(gid) for gid in grupo_ids if gid.isdigit()])).all()
+    tarjeta.grupos = grupos if grupos else []
+
+    db.session.commit()
+    flash(f'Tarjeta "{tarjeta.nombre}" actualizada correctamente', 'success')
+    return redirect(url_for('admin.index'))
+
+@admin_bp.route('/tarjetas/<int:tarjeta_id>/eliminar', methods=['POST'])
+def eliminar_tarjeta(tarjeta_id):
+    tarjeta = Tarjeta.query.get_or_404(tarjeta_id)
+    db.session.delete(tarjeta)
+    db.session.commit()
+    flash(f'Tarjeta "{tarjeta.nombre}" eliminada correctamente', 'success')
+    return redirect(url_for('admin.index'))
+
+@admin_bp.route('/usuarios/crear', methods=['POST'])
+def crear_usuario():
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '').strip()
+    grupo_ids = request.form.getlist('grupo_ids')
+
+    if not username or not password:
+        flash('Nombre de usuario y contraseña son obligatorios', 'warning')
+        return redirect(url_for('admin.index'))
+
+    if Usuario.query.filter_by(username=username).first():
+        flash('El usuario ya existe', 'danger')
+        return redirect(url_for('admin.index'))
+
+    pw_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+    usuario = Usuario(username=username, password_hash=pw_hash)
+
+    grupos = Grupo.query.filter(Grupo.id.in_([int(gid) for gid in grupo_ids if gid.isdigit()])).all()
+    usuario.grupos = grupos
+
+    db.session.add(usuario)
+    db.session.commit()
+
+    flash(f'Usuario "{username}" creado correctamente', 'success')
+    return redirect(url_for('admin.index'))
+
+
+@admin_bp.route('/usuarios/<int:usuario_id>/editar', methods=['POST'])
+def editar_usuario(usuario_id):
+    usuario = Usuario.query.get_or_404(usuario_id)
+    grupo_ids = request.form.getlist('grupo_ids')
+    password = request.form.get('password', '').strip()
+
+    grupos = Grupo.query.filter(Grupo.id.in_([int(gid) for gid in grupo_ids if gid.isdigit()])).all()
+    usuario.grupos = grupos
+
+    if password:
+        usuario.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+
+    db.session.commit()
+    flash(f'Usuario "{usuario.username}" actualizado correctamente', 'success')
+    return redirect(url_for('admin.index'))
+
+
+@admin_bp.route('/usuarios/<int:usuario_id>/eliminar', methods=['POST'])
+def eliminar_usuario(usuario_id):
+    usuario = Usuario.query.get_or_404(usuario_id)
+    if usuario.username == 'admin':
+        flash('No puedes eliminar al usuario admin', 'danger')
+        return redirect(url_for('admin.index'))
+
+    db.session.delete(usuario)
+    db.session.commit()
+    flash(f'Usuario "{usuario.username}" eliminado correctamente', 'success')
+    return redirect(url_for('admin.index'))
+
+@admin_bp.route('/grupos/crear', methods=['POST'])
+def crear_grupo():
+    nombre = request.form.get('nombre', '').strip()
+    usuario_ids = request.form.getlist('usuario_ids')
+    tarjeta_ids = request.form.getlist('tarjeta_ids')
+
+    if not nombre:
+        flash('Nombre del grupo es obligatorio', 'warning')
+        return redirect(url_for('admin.index'))
+
+    if Grupo.query.filter_by(nombre=nombre).first():
+        flash('El grupo ya existe', 'danger')
+        return redirect(url_for('admin.index'))
+
+    grupo = Grupo(nombre=nombre)
+
+    usuarios = Usuario.query.filter(Usuario.id.in_([int(uid) for uid in usuario_ids if uid.isdigit()])).all()
+    tarjetas = Tarjeta.query.filter(Tarjeta.id.in_([int(tid) for tid in tarjeta_ids if tid.isdigit()])).all()
+
+    grupo.usuarios = usuarios
+    grupo.tarjetas = tarjetas
+
+    db.session.add(grupo)
+    db.session.commit()
+
+    flash(f'Grupo "{nombre}" creado correctamente', 'success')
+    return redirect(url_for('admin.index'))
+
+
+@admin_bp.route('/grupos/<int:grupo_id>/editar', methods=['POST'])
+def editar_grupo(grupo_id):
+    grupo = Grupo.query.get_or_404(grupo_id)
+    nombre = request.form.get('nombre', '').strip()
+    usuario_ids = request.form.getlist('usuario_ids')
+    tarjeta_ids = request.form.getlist('tarjeta_ids')
+
+    if not nombre:
+        flash('El nombre del grupo es obligatorio', 'warning')
+        return redirect(url_for('admin.index'))
+
+    grupo.nombre = nombre
+
+    usuarios = Usuario.query.filter(Usuario.id.in_([int(uid) for uid in usuario_ids if uid.isdigit()])).all()
+    tarjetas = Tarjeta.query.filter(Tarjeta.id.in_([int(tid) for tid in tarjeta_ids if tid.isdigit()])).all()
+
+    grupo.usuarios = usuarios
+    grupo.tarjetas = tarjetas
+
+    db.session.commit()
+    flash(f'Grupo "{nombre}" actualizado correctamente', 'success')
+    return redirect(url_for('admin.index'))
+
+
+@admin_bp.route('/grupos/<int:grupo_id>/eliminar', methods=['POST'])
+def eliminar_grupo(grupo_id):
+    grupo = Grupo.query.get_or_404(grupo_id)
+    db.session.delete(grupo)
+    db.session.commit()
+    flash(f'Grupo "{grupo.nombre}" eliminado correctamente', 'success')
+    return redirect(url_for('admin.index'))
+
+
+===== blueprints\admin\__init__.py =====
+
+from flask import Blueprint
+
+admin_bp = Blueprint(
+    'admin',
+    __name__,
+    url_prefix='/admin',
+    template_folder='templates'
+)
+
+from . import routes
+
+
+===== blueprints\admin\templates\admin.html =====
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel de Administración</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap');
+
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: url('{{ url_for('static', filename='images/hoober.jpg') }}') no-repeat center center/cover;
+      color: #eee;
+      min-height: 100vh;
+      margin: 0;
+      padding: 1rem;
+    }
+
+    @media (min-width: 640px) {
+      body {
+        padding: 2rem 1rem;
+      }
+    }
+
+    h1 {
+      color: #f0f0f0;
+      font-weight: 600;
+      font-size: 2.25rem;
+      text-align: center;
+      margin-bottom: 2rem;
+      text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+    }
+
+    section {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 1rem;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    @media (min-width: 640px) {
+      section {
+        padding: 2rem;
+        margin-bottom: 2rem;
+      }
+    }
+    section:hover, section:focus-within {
+      transform: translateY(-5px);
+      box-shadow: 0 15px 30px rgba(255, 255, 255, 0.2);
+    }
+
+    section h2 {
+      color: #f9f9f9;
+      font-weight: 600;
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+      border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+      padding-bottom: 0.5rem;
+    }
+
+    section h3 {
+      margin-top: 1.5rem;
+      color: #ddd;
+      font-weight: 500;
+      font-size: 1.25rem;
+    }
+
+    .table-responsive {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: rgba(0,0,0,0.25);
+      border-radius: 0.75rem;
+      overflow: hidden;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.7);
+      margin-top: 1rem;
+    }
+
+    th, td {
+      padding: 1rem 1.25rem;
+      text-align: left;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      color: #eee;
+      vertical-align: middle;
+    }
+
+    td.flex {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+    }
+
+    th {
+      background: rgba(255,255,255,0.1);
+      font-weight: 600;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    input:not([type="checkbox"]):not([type="file"]), select {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      background: rgba(0, 0, 0, 0.4);
+      color: #eee;
+      font-weight: 400;
+      font-size: 1.05rem;
+      outline: none;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+      height: 40px;
+      box-sizing: border-box;
+    }
+
+    input::placeholder {
+      color: #bbb;
+      font-weight: 300;
+    }
+
+    input:focus, select:focus {
+      border-color: rgba(255,255,255,0.8);
+      box-shadow: 0 0 8px rgba(255,255,255,0.5);
+      background: rgba(0, 0, 0, 0.6);
+    }
+
+    button {
+      padding: 0 2.5rem;
+      border-radius: 0.75rem;
+      font-weight: 600;
+      font-size: 1.25rem;
+      background: linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.15) 100%);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.25);
+      user-select: none;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+      letter-spacing: 0.5px;
+      min-width: 110px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      vertical-align: middle;
+    }
+
+    button:hover, button:focus {
+      background: linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.25) 100%);
+      box-shadow: 0 8px 16px rgba(255,255,255,0.25), 0 6px 12px rgba(0,0,0,0.4);
+      transform: translateY(-4px);
+      outline: none;
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.6);
+    }
+
+    button:active {
+      transform: translateY(2px);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.1) 100%);
+    }
+
+    .file-btn.file-selected {
+      background: linear-gradient(135deg, rgba(110, 231, 183, 0.5) 0%, rgba(52, 211, 153, 0.4) 100%);
+      border-color: rgba(110, 231, 183, 0.8);
+    }
+
+    .inline-form {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .inline-form > * {
+      width: 100%;
+    }
+    .inline-form button {
+      width: 100%;
+    }
+
+    @media (min-width: 840px) {
+      .inline-form {
+        flex-direction: row;
+        gap: 1rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .inline-form > * {
+        flex: 1;
+        min-width: 150px;
+      }
+      .inline-form button {
+        flex: 0 0 auto;
+        min-width: auto;
+        align-self: center;
+        width: auto;
+      }
+    }
+
+    .checkbox-group label {
+      display: inline-flex;
+      align-items: center;
+      margin-right: 1.25rem;
+      cursor: pointer;
+      user-select: none;
+      color: #ddd;
+      font-weight: 400;
+      font-size: 0.9rem;
+    }
+    .checkbox-group input[type="checkbox"] {
+      margin-right: 0.4rem;
+      accent-color: #6ee7b7; /* Tailwind emerald-300 for modern feel */
+      cursor: pointer;
+    }
+
+    fieldset {
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 0.75rem;
+      padding: 1rem 1.25rem;
+      margin: 1rem 0 1.5rem 0;
+      background: rgba(0,0,0,0.2);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      color: #ddd;
+    }
+    legend {
+      padding: 0 0.75rem;
+      font-weight: 600;
+      color: #a3a3a3;
+    }
+
+    /* Responsive tables */
+    @media (max-width: 767px) {
+      table {
+        display: block;
+      }
+      thead {
+        display: none;
+      }
+      tr {
+        display: block;
+        margin-bottom: 1rem;
+        padding: 1rem;
+        background: rgba(0,0,0,0.3);
+        border-radius: 0.5rem;
+      }
+      td {
+        display: flex;
+        flex-direction: column;
+        padding: 0.5rem 0;
+        border-bottom: none;
+      }
+      td:before {
+        content: attr(data-label);
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+        color: #ccc;
+      }
+      td.flex {
+        flex-direction: row;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+    }
+  </style>
+</head>
+<body class="max-w-7xl mx-auto">
+
+  <h1>Panel de Administración</h1>
+
+  <!-- Sección Usuarios -->
+  <section tabindex="0">
+    <h2>Usuarios</h2>
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr><th>Usuario</th><th>Grupos</th><th>Cambiar Contraseña</th><th>Acciones</th></tr>
+        </thead>
+        <tbody>
+        {% for usuario in usuarios %}
+          <tr>
+            <form method="POST" action="{{ url_for('admin.editar_usuario', usuario_id=usuario.id) }}">
+              <td class="pr-4" data-label="Usuario">{{ usuario.username }}</td>
+              <td data-label="Grupos">
+                <div class="checkbox-group max-w-xs overflow-auto max-h-36">
+                {% for grupo in grupos %}
+                  <label>
+                    <input type="checkbox" name="grupo_ids" value="{{ grupo.id }}"
+                           {% if grupo in usuario.grupos %}checked{% endif %}>
+                    {{ grupo.nombre }}
+                  </label>
+                {% endfor %}
+                </div>
+              </td>
+              <td data-label="Cambiar Contraseña">
+                <input type="password" name="password" placeholder="Nueva contraseña" autocomplete="new-password" />
+              </td>
+              <td class="flex gap-2 flex-wrap items-center justify-center" data-label="Acciones">
+                <button type="submit">Guardar</button>
+                {% if usuario.username != 'admin' %}
+                <button formaction="{{ url_for('admin.eliminar_usuario', usuario_id=usuario.id) }}" formmethod="POST" onclick="return confirm('¿Eliminar usuario?');" type="submit">
+                  Eliminar
+                </button>
+                {% endif %}
+              </td>
+            </form>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Crear Usuario Nuevo</h3>
+    <form method="POST" action="{{ url_for('admin.crear_usuario') }}" class="max-w-lg inline-form">
+      <input name="username" placeholder="Usuario" required autocomplete="username" />
+      <input type="password" name="password" placeholder="Contraseña" required autocomplete="new-password" />
+      <div class="checkbox-group max-w-xs overflow-auto max-h-36">
+        {% for grupo in grupos %}
+          <label><input type="checkbox" name="grupo_ids" value="{{ grupo.id }}"> {{ grupo.nombre }}</label>
+        {% endfor %}
+      </div>
+      <button type="submit">Crear Usuario</button>
+    </form>
+  </section>
+
+  <!-- Sección Grupos -->
+  <section tabindex="0">
+    <h2>Grupos</h2>
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr><th>Nombre</th><th>Usuarios</th><th>Tarjetas</th><th>Acciones</th></tr>
+        </thead>
+        <tbody>
+        {% for grupo in grupos %}
+          <tr>
+            <form method="POST" action="{{ url_for('admin.editar_grupo', grupo_id=grupo.id) }}">
+              <td data-label="Nombre">
+                <input name="nombre" value="{{ grupo.nombre }}" required />
+              </td>
+              <td data-label="Usuarios">
+                <div class="checkbox-group max-w-xs overflow-auto max-h-36">
+                  {% for usuario in usuarios %}
+                    <label><input type="checkbox" name="usuario_ids" value="{{ usuario.id }}"
+                      {% if usuario in grupo.usuarios %}checked{% endif %}> {{ usuario.username }}</label>
+                  {% endfor %}
+                </div>
+              </td>
+              <td data-label="Tarjetas">
+                <div class="checkbox-group max-w-xs overflow-auto max-h-36">
+                  {% for tarjeta in tarjetas %}
+                    <label><input type="checkbox" name="tarjeta_ids" value="{{ tarjeta.id }}"
+                      {% if tarjeta in grupo.tarjetas %}checked{% endif %}> {{ tarjeta.nombre }}</label>
+                  {% endfor %}
+                </div>
+              </td>
+              <td class="flex gap-2 flex-wrap items-center justify-center" data-label="Acciones">
+                <button type="submit">Guardar</button>
+                <button formaction="{{ url_for('admin.eliminar_grupo', grupo_id=grupo.id) }}" formmethod="POST" onclick="return confirm('¿Eliminar grupo?');" type="submit">
+                  Eliminar
+                </button>
+              </td>
+            </form>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Crear Grupo Nuevo</h3>
+    <form method="POST" action="{{ url_for('admin.crear_grupo') }}" class="max-w-lg inline-form">
+      <input name="nombre" placeholder="Nombre grupo" required />
+      <div class="checkbox-group max-w-xs overflow-auto max-h-36">
+        {% for tarjeta in tarjetas %}
+          <label><input type="checkbox" name="tarjeta_ids" value="{{ tarjeta.id }}"> {{ tarjeta.nombre }}</label>
+        {% endfor %}
+      </div>
+      <button type="submit">Crear Grupo</button>
+    </form>
+  </section>
+
+  <!-- Sección Tarjetas -->
+  <section tabindex="0">
+    <h2>Tarjetas</h2>
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Imagen URL</th>
+            <th>Archivo HTML</th>
+            <th>Grupos</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for tarjeta in tarjetas %}
+          <tr>
+            <form method="POST" action="{{ url_for('admin.editar_tarjeta', tarjeta_id=tarjeta.id) }}">
+              <td data-label="Nombre">
+                <input name="nombre" value="{{ tarjeta.nombre }}" required />
+              </td>
+              <td data-label="Imagen URL">
+                <input name="imagen_url" value="{{ tarjeta.imagen_url }}" required />
+              </td>
+              <td data-label="Archivo HTML">
+                <input name="archivo_html" value="{{ tarjeta.archivo_html }}" required />
+              </td>
+              <td data-label="Grupos">
+                <div class="checkbox-group max-w-xs overflow-auto max-h-36">
+                  {% for grupo in grupos %}
+                    <label>
+                      <input type="checkbox" name="grupo_ids" value="{{ grupo.id }}"
+                        {% if grupo in tarjeta.grupos %}checked{% endif %}>
+                      {{ grupo.nombre }}
+                    </label>
+                  {% endfor %}
+                </div>
+              </td>
+              <td class="flex gap-2 flex-wrap items-center justify-center" data-label="Acciones">
+                <button type="submit">Guardar</button>
+                <button formaction="{{ url_for('admin.eliminar_tarjeta', tarjeta_id=tarjeta.id) }}" formmethod="POST" onclick="return confirm('¿Eliminar tarjeta?');" type="submit">
+                  Eliminar
+                </button>
+              </td>
+            </form>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section tabindex="0">
+  <h3>Crear Tarjeta Nueva</h3>
+  <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin.crear_tarjeta') }}" class="max-w-lg inline-form" id="crearTarjetaForm">
+    <input type="text" name="nombre" placeholder="Nombre tarjeta (igual a carpeta)" id="nombreTarjeta" required />
+    <!-- Imagen -->
+    <input type="file" id="imagen" name="imagen" accept="image/*" class="submit" required hidden>
+    <button type="button" class="file-btn" onclick="document.getElementById('imagen').click()">Abrir imagen</button>
+
+    <!-- Archivo HTML -->
+    <input type="file" id="archivo_html" name="archivo_html" accept=".html" class="submit" required hidden>
+    <button type="button" class="file-btn" onclick="document.getElementById('archivo_html').click()">Abrir archivo HTML</button>
+
+    <!-- Video -->
+    <input type="file" id="video" name="video" accept="video/*" class="submit" hidden>
+    <button type="button" class="file-btn" onclick="document.getElementById('video').click()">Abrir video</button>
+    <fieldset>
+      <legend>Grupos asignados</legend>
+      {% for grupo in grupos %}
+        <label><input type="checkbox" name="grupo_ids" value="{{ grupo.id }}"> {{ grupo.nombre }}</label><br>
+      {% endfor %}
+    </fieldset>
+    <button type="submit">Crear Tarjeta</button>
+  </form>
+  </section>
+
+  <script>
+    // Handle file selection changes
+    document.querySelectorAll('input[type="file"]').forEach(input => {
+      input.addEventListener('change', function() {
+        const button = this.nextElementSibling;
+        if(this.files.length > 0) {
+          button.classList.add('file-selected');
+        } else {
+          button.classList.remove('file-selected');
+        }
+      });
+    });
+
+    // Evitar usar "admin" como nombre de carpeta para tarjetas - validación frontend.
+    document.getElementById('crearTarjetaForm').addEventListener('submit', function(e) {
+      const nombre = document.getElementById('nombreTarjeta').value.trim().toLowerCase();
+      if(nombre === 'admin') {
+        alert("No puedes usar 'admin' como nombre de carpeta para tarjetas.");
+        e.preventDefault();
+      }
+    });
+  </script>
+</body>
+</html>
+
+===== blueprints\Carta_TK\main.py =====
+
+
+import os
+from flask import abort, render_template
+from . import carta_tk_bp
+from flask_login import login_required
+
+@carta_tk_bp.route('/')
+@login_required
+def mostrar_archivo():
+    archivo_html = 'Carta_TK.html'
+
+    # Validaciones de seguridad
+    if not archivo_html.endswith('.html'):
+        abort(404)
+    safe_path = os.path.normpath(archivo_html)
+    if '..' in safe_path or os.path.isabs(safe_path):
+        abort(404)
+
+    try:
+        return render_template(archivo_html)
+    except:
+        abort(404)
+
+
+===== blueprints\Carta_TK\__init__.py =====
+
+
+from flask import Blueprint
+
+carta_tk_bp = Blueprint(
+    'Carta_TK',
+    __name__,
+    url_prefix='/carta_tk',
+    template_folder='templates'
+)
+
+from . import main
+
+
+===== blueprints\Carta_TK\templates\Carta_TK.html =====
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video</title>
+    <style>
+        body {
+            background: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .video-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        @media (max-width: 600px) {
+            .video-container {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="video-container">
+        <video autoplay muted>
+        <source src="Carta_TK.mp4" type="video/mp4">
+        </video>
+    </div>
+
+</body>
+</html>
+
+===== blueprints\Corazon3DV\main.py =====
+
+import os
+from flask import abort, render_template
+from . import Corazon3DV_bp
+from flask_login import login_required
+
+@Corazon3DV_bp.route('/<string:archivo_html>')
+@login_required
+def mostrar_archivo(archivo_html):
+    # Validaciones para evitar path traversal:
+    if not archivo_html.endswith('.html'):
+        abort(404)
+    safe_path = os.path.normpath(archivo_html)
+    if '..' in safe_path or os.path.isabs(safe_path):
+        abort(404)
+
+    # Intenta renderizar
+    try:
+        return render_template(archivo_html)
+    except:
+        abort(404)
+
+
+===== blueprints\Corazon3DV\__init__.py =====
+
+from flask import Blueprint
+
+Corazon3DV_bp = Blueprint(
+    'Corazon3DV',
+    __name__,
+    url_prefix='/corazon3DV',
+    template_folder='templates'
+)
+
+from . import main
+
+
+===== blueprints\Corazon3DV\templates\Corazon3DV.html =====
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Heart 3D Volumetric</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+    }
+    canvas {
+      position: absolute;
+    }
+  </style>
+</head>
+<body>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://unpkg.com/gsap@3/dist/gsap.min.js"></script>
+
+  <script>
+    console.clear();
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 5000);
+    camera.position.z = 60;
+
+    const renderer = new THREE.WebGLRenderer({antialias: true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+    const light1 = new THREE.PointLight(0xffaaaa, 1, 200);
+    light1.position.set(50, 50, 50);
+    scene.add(light1);
+
+    const light2 = new THREE.PointLight(0xaa88ff, 0.8, 200);
+    light2.position.set(-50, -50, -50);
+    scene.add(light2);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+
+    function heart3D(x, y, z) {
+      const a = Math.pow((x*x + (9.0/4.0)*y*y + z*z - 1), 3);
+      const b = x*x * z*z*z;
+      const c = (9.0/80.0) * y*y * z*z*z;
+      return a - b - c;
+    }
+
+    const positions = [];
+    const colors = [];
+    const totalPoints = 950000;
+    const scale = 65;
+
+    for (let i = 0; i < totalPoints; i++) {
+      const x = (Math.random() * 2 - 1) * 1.4;
+      const y = (Math.random() * 2 - 1) * 1.4;
+      const z = (Math.random() * 2 - 1) * 1.4;
+
+      const val = heart3D(x, y, z);
+      if (val <= 0 && val > -0.3) {
+        positions.push(x * scale, y * scale, z * scale);
+
+        const dist = Math.sqrt(x*x + y*y + z*z);
+        const color = new THREE.Color();
+        color.setHSL(0.96, 1.0, 0.3 + dist * 0.4);
+        colors.push(color.r, color.g, color.b);
+      }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+      size: 1.6,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.95
+    });
+
+    const heart = new THREE.Points(geometry, material);
+    heart.rotation.x = -Math.PI / 2;
+    scene.add(heart);
+
+    gsap.to(heart.scale, {
+      x: 1.1, y: 1.1, z: 1.1,
+      duration: 1.3, repeat: -1, yoyo: true,
+      ease: "power1.inOut"
+    });
+
+    gsap.to(scene.rotation, {
+      y: "+=6.28",
+      duration: 35,
+      repeat: -1,
+      ease: "none"
+    });
+
+    function render() {
+      requestAnimationFrame(render);
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth/window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    render();
+  </script>
+</body>
+</html>
+
+
+===== blueprints\Corazon_PRGB\main.py =====
+
+import os
+from flask import abort, render_template
+from . import Corazon_PRGB_bp
+from flask_login import login_required
+
+@Corazon_PRGB_bp.route('/<string:archivo_html>')
+@login_required
+def mostrar_archivo(archivo_html):
+    # Validaciones para evitar path traversal:
+    if not archivo_html.endswith('.html'):
+        abort(404)
+    safe_path = os.path.normpath(archivo_html)
+    if '..' in safe_path or os.path.isabs(safe_path):
+        abort(404)
+
+    # Intenta renderizar
+    try:
+        return render_template(archivo_html)
+    except:
+        abort(404)
+
+
+===== blueprints\Corazon_PRGB\__init__.py =====
+
+from flask import Blueprint
+
+Corazon_PRGB_bp = Blueprint(
+    'Corazon_PRGB',
+    __name__,
+    url_prefix='/corazon_PRGB',
+    template_folder='templates'
+)
+
+from . import main
+
+
+===== blueprints\Corazon_PRGB\templates\Corazon_PRGB.html =====
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SVG heart to WebGL - Animated</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+    .controls {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+    canvas {
+      position: absolute;
+    }
+    svg {
+      position: absolute;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <svg viewBox="0 0 600 552">
+    <path d="M300,107.77C284.68,55.67,239.76,0,162.31,0,64.83,0,0,82.08,0,171.71c0,.48,0,.95,0,1.43-.52,19.5,0,217.94,299.87,379.69v0l0,0,.05,0,0,0,0,0v0C600,391.08,600.48,192.64,600,173.14c0-.48,0-.95,0-1.43C600,82.08,535.17,0,437.69,0,360.24,0,315.32,55.67,300,107.77" fill="#ee5282"/>
+  </svg>
+
+  <!-- Librerías desde CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://unpkg.com/gsap@3/dist/gsap.min.js"></script>
+
+  <script>
+    console.clear();
+
+    // Escena y cámara
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000);
+    camera.position.z = 500;
+
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setPixelRatio(window.devicePixelRatio > 1 ? 2 : 1);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Controles
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+    // Partículas
+    const tl = gsap.timeline();
+
+    const path = document.querySelector("path");
+    const length = path.getTotalLength();
+    const vertices = [];
+
+    for (let i = 0; i < length; i += 0.1) {
+      const point = path.getPointAtLength(i);
+      const vector = new THREE.Vector3(point.x, -point.y, 0);
+      vector.x += (Math.random() - 0.5) * 30;
+      vector.y += (Math.random() - 0.5) * 30;
+      vector.z += (Math.random() - 0.5) * 70;
+      vertices.push(vector);
+      tl.from(vector, {
+        x: 600 / 2,
+        y: -552 / 2,
+        z: 0,
+        ease: "power2.inOut",
+        duration: Math.random() * 3 + 2
+      }, i * 0.002);
+    }
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(vertices);
+    const material = new THREE.PointsMaterial({
+      color: 0x5177ED,
+      blending: THREE.AdditiveBlending,
+      size: 3
+    });
+
+    const particles = new THREE.Points(geometry, material);
+    particles.position.x -= 600 / 2;
+    particles.position.y += 552 / 2;
+    scene.add(particles);
+
+    gsap.fromTo(scene.rotation, { y: -0.2 }, {
+      y: 0.2,
+      repeat: -1,
+      yoyo: true,
+      ease: "power2.inOut",
+      duration: 3,
+    });
+
+    // Cambio de color arcoíris dinámico
+    let hue = 0;
+    function updateColor() {
+      hue += 0.002;
+      if (hue > 1) hue = 0;
+      material.color.setHSL(hue, 1.0, 0.5);
+    }
+
+    function render() {
+      requestAnimationFrame(render);
+      updateColor();
+      geometry.setFromPoints(vertices);
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    render();
+  </script>
+</body>
+</html>
+
+
+===== blueprints\Flor_AN\main.py =====
+
+
+import os
+from flask import abort, render_template
+from . import flor_an_bp
+from flask_login import login_required
+
+@flor_an_bp.route('/')
+@login_required
+def mostrar_archivo():
+    archivo_html = 'Flor_AN.html'
+
+    # Validaciones de seguridad
+    if not archivo_html.endswith('.html'):
+        abort(404)
+    safe_path = os.path.normpath(archivo_html)
+    if '..' in safe_path or os.path.isabs(safe_path):
+        abort(404)
+
+    try:
+        return render_template(archivo_html)
+    except:
+        abort(404)
+
+
+===== blueprints\Flor_AN\__init__.py =====
+
+
+from flask import Blueprint
+
+flor_an_bp = Blueprint(
+    'Flor_AN',
+    __name__,
+    url_prefix='/flor_an',
+    template_folder='templates'
+)
+
+from . import main
+
+
+===== blueprints\Flor_AN\templates\Flor_AN.html =====
+
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flor</title>
+    <style>
+      *,
+      *::after,
+      *::before {
+        padding: 0;
+        margin: 0;
+        box-sizing: border-box;
+      }
+
+      :root {
+        --dark-color: #000000;
+      }
+
+      body {
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        min-height: 100vh;
+        background-color: var(--dark-color);
+        overflow: hidden;
+        perspective: 1000px;
+      }
+
+      h1{
+        font-size: 20px;
+        text-align: center;
+        position: absolute;
+        top: 50px;
+        color: white;
+      }
+
+      .night {
+        position: fixed;
+        left: 50%;
+        top: 0;
+        transform: translateX(-50%);
+        width: 100%;
+        height: 100%;
+        filter: blur(0.1vmin);
+        background-image: radial-gradient(
+            ellipse at top,
+            transparent 0%,
+            var(--dark-color)
+          ),
+          radial-gradient(
+            ellipse at bottom,
+            var(--dark-color),
+            rgba(145, 233, 255, 0.2)
+          ),
+          repeating-linear-gradient(
+            220deg,
+            black 0px,
+            black 19px,
+            transparent 19px,
+            transparent 22px
+          ),
+          repeating-linear-gradient(
+            189deg,
+            black 0px,
+            black 19px,
+            transparent 19px,
+            transparent 22px
+          ),
+          repeating-linear-gradient(
+            148deg,
+            black 0px,
+            black 19px,
+            transparent 19px,
+            transparent 22px
+          ),
+          linear-gradient(90deg, #00fffa, #f0f0f0);
+      }
+
+      .flowers {
+        position: relative;
+        transform: scale(0.7);
+      }
+
+      .flower {
+        position: absolute;
+        bottom: 10vmin;
+        transform-origin: bottom center;
+        z-index: 10;
+        --fl-speed: 0.8s;
+      }
+      .flower--1 {
+        animation: moving-flower-1 4s linear infinite;
+      }
+      .flower--1 .flower__line {
+        height: 70vmin;
+        animation-delay: 0.3s;
+      }
+      .flower--1 .flower__line__leaf--1 {
+        animation: blooming-leaf-right var(--fl-speed) 1.6s backwards;
+      }
+      .flower--1 .flower__line__leaf--2 {
+        animation: blooming-leaf-right var(--fl-speed) 1.4s backwards;
+      }
+      .flower--1 .flower__line__leaf--3 {
+        animation: blooming-leaf-left var(--fl-speed) 1.2s backwards;
+      }
+      .flower--1 .flower__line__leaf--4 {
+        animation: blooming-leaf-left var(--fl-speed) 1s backwards;
+      }
+      .flower--1 .flower__line__leaf--5 {
+        animation: blooming-leaf-right var(--fl-speed) 1.8s backwards;
+      }
+      .flower--1 .flower__line__leaf--6 {
+        animation: blooming-leaf-left var(--fl-speed) 2s backwards;
+      }
+      .flower--2 {
+        left: 50%;
+        transform: rotate(30deg);
+        animation: moving-flower-2 4s linear infinite;
+      }
+      .flower--2 .flower__line {
+        height: 60vmin;
+        animation-delay: 0.8s;
+      }
+      .flower--2 .flower__line__leaf--1 {
+        animation: blooming-leaf-right var(--fl-speed) 1.9s backwards;
+      }
+      .flower--2 .flower__line__leaf--2 {
+        animation: blooming-leaf-right var(--fl-speed) 1.7s backwards;
+      }
+      .flower--2 .flower__line__leaf--3 {
+        animation: blooming-leaf-left var(--fl-speed) 1.5s backwards;
+      }
+      .flower--2 .flower__line__leaf--4 {
+        animation: blooming-leaf-left var(--fl-speed) 1.3s backwards;
+      }
+      .flower--3 {
+        left: 50%;
+        transform: rotate(-15deg);
+        animation: moving-flower-3 4s linear infinite;
+      }
+      .flower--3 .flower__line {
+        animation-delay: 0.9s;
+      }
+      .flower--3 .flower__line__leaf--1 {
+        animation: blooming-leaf-right var(--fl-speed) 2.5s backwards;
+      }
+      .flower--3 .flower__line__leaf--2 {
+        animation: blooming-leaf-right var(--fl-speed) 2.3s backwards;
+      }
+      .flower--3 .flower__line__leaf--3 {
+        animation: blooming-leaf-left var(--fl-speed) 2.1s backwards;
+      }
+      .flower--3 .flower__line__leaf--4 {
+        animation: blooming-leaf-left var(--fl-speed) 1.9s backwards;
+      }
+      .flower__leafs {
+        position: relative;
+        animation: blooming-flower 2s backwards;
+      }
+      .flower__leafs--1 {
+        animation-delay: 1.1s;
+      }
+      .flower__leafs--2 {
+        animation-delay: 1.4s;
+      }
+      .flower__leafs--3 {
+        animation-delay: 1.7s;
+      }
+      .flower__leafs::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        transform: translate(-50%, -100%);
+        width: 8vmin;
+        height: 8vmin;
+        background-color: #6bf0ff;
+        filter: blur(10vmin);
+      }
+      .flower__leaf {
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        width: 8vmin;
+        height: 11vmin;
+        border-radius: 51% 49% 47% 53%/44% 45% 55% 69%;
+        background-color: #65e6cc;
+        background-image: linear-gradient(to top, #40bbab, #a7ffee);
+        transform-origin: bottom center;
+        opacity: 0.9;
+        box-shadow: inset 0 0 2vmin rgba(255, 255, 255, 0.5);
+      }
+      .flower__leaf--1 {
+        transform: translate(-10%, 1%) rotateY(40deg) rotateX(-50deg);
+      }
+      .flower__leaf--2 {
+        transform: translate(-50%, -4%) rotateX(40deg);
+      }
+      .flower__leaf--3 {
+        transform: translate(-90%, 0%) rotateY(45deg) rotateX(50deg);
+      }
+      .flower__leaf--4 {
+        width: 8vmin;
+        height: 8vmin;
+        transform-origin: bottom left;
+        border-radius: 4vmin 10vmin 4vmin 4vmin;
+        transform: translate(0%, 18%) rotateX(70deg) rotate(-43deg);
+        background-image: linear-gradient(to top, #39c6d6, #a7ffee);
+        z-index: 1;
+        opacity: 0.8;
+      }
+      .flower__white-circle {
+        position: absolute;
+        left: -3.5vmin;
+        top: -3vmin;
+        width: 9vmin;
+        height: 4vmin;
+        border-radius: 50%;
+        background-color: #fff;
+      }
+      .flower__white-circle::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 45%;
+        transform: translate(-50%, -50%);
+        width: 60%;
+        height: 60%;
+        border-radius: inherit;
+        background-image: repeating-linear-gradient(
+            135deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            45deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            67.5deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            135deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            45deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            112.5deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            112.5deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            45deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            22.5deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            45deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            22.5deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            135deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            157.5deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            67.5deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          repeating-linear-gradient(
+            67.5deg,
+            rgba(0, 0, 0, 0.03) 0px,
+            rgba(0, 0, 0, 0.03) 1px,
+            transparent 1px,
+            transparent 12px
+          ),
+          linear-gradient(90deg, #ffeb12, #ffce00);
+      }
+      .flower__line {
+        height: 55vmin;
+        width: 1.5vmin;
+        background-image: linear-gradient(
+            to left,
+            rgba(0, 0, 0, 0.2),
+            transparent,
+            rgba(255, 255, 255, 0.2)
+          ),
+          linear-gradient(to top, transparent 10%, #14757a, #39c6d6);
+        box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.5);
+        animation: grow-flower-tree 4s backwards;
+      }
+      .flower__line__leaf {
+        --w: 7vmin;
+        --h: calc(var(--w) + 2vmin);
+        position: absolute;
+        top: 20%;
+        left: 90%;
+        width: var(--w);
+        height: var(--h);
+        border-top-right-radius: var(--h);
+        border-bottom-left-radius: var(--h);
+        background-image: linear-gradient(
+          to top,
+          rgba(20, 117, 122, 0.4),
+          #39c6d6
+        );
+      }
+      .flower__line__leaf--1 {
+        transform: rotate(70deg) rotateY(30deg);
+      }
+      .flower__line__leaf--2 {
+        top: 45%;
+        transform: rotate(70deg) rotateY(30deg);
+      }
+      .flower__line__leaf--3,
+      .flower__line__leaf--4,
+      .flower__line__leaf--6 {
+        border-top-right-radius: 0;
+        border-bottom-left-radius: 0;
+        border-top-left-radius: var(--h);
+        border-bottom-right-radius: var(--h);
+        left: -460%;
+        top: 12%;
+        transform: rotate(-70deg) rotateY(30deg);
+      }
+      .flower__line__leaf--4 {
+        top: 40%;
+      }
+      .flower__line__leaf--5 {
+        top: 0;
+        transform-origin: left;
+        transform: rotate(70deg) rotateY(30deg) scale(0.6);
+      }
+      .flower__line__leaf--6 {
+        top: -2%;
+        left: -450%;
+        transform-origin: right;
+        transform: rotate(-70deg) rotateY(30deg) scale(0.6);
+      }
+      .flower__light {
+        position: absolute;
+        bottom: 0vmin;
+        width: 1vmin;
+        height: 1vmin;
+        background-color: #fffb00; /* particulas */
+        border-radius: 50%;
+        filter: blur(0.2vmin);
+        animation: light-ans 4s linear infinite backwards;
+      }
+      .flower__light:nth-child(odd) {
+        background-color: #23f0ff; /* particulas */
+      }
+      .flower__light--1 {
+        left: -2vmin;
+        animation-delay: 1s;
+      }
+      .flower__light--2 {
+        left: 3vmin;
+        animation-delay: 0.5s;
+      }
+      .flower__light--3 {
+        left: -6vmin;
+        animation-delay: 0.3s;
+      }
+      .flower__light--4 {
+        left: 6vmin;
+        animation-delay: 0.9s;
+      }
+      .flower__light--5 {
+        left: -1vmin;
+        animation-delay: 1.5s;
+      }
+      .flower__light--6 {
+        left: -4vmin;
+        animation-delay: 3s;
+      }
+      .flower__light--7 {
+        left: 3vmin;
+        animation-delay: 2s;
+      }
+      .flower__light--8 {
+        left: -6vmin;
+        animation-delay: 3.5s;
+      }
+      .flower__grass {
+        --c: #159faa; /* mas helecho */
+    /* color hojas */     --line-w: 1.5vmin;
+        position: absolute;
+        bottom: 12vmin;
+        left: -7vmin;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        z-index: 20;
+        transform-origin: bottom center;
+        transform: rotate(-48deg) rotateY(40deg);
+      }
+      .flower__grass--1 {
+        animation: moving-grass 2s linear infinite;
+      }
+      .flower__grass--2 {
+        left: 2vmin;
+        bottom: 10vmin;
+        transform: scale(0.5) rotate(75deg) rotateX(10deg) rotateY(-200deg);
+        opacity: 0.8;
+        z-index: 0;
+        animation: moving-grass--2 1.5s linear infinite;
+      }
+      .flower__grass--top {
+        width: 7vmin;
+        height: 10vmin;
+        border-top-right-radius: 100%;
+        border-right: var(--line-w) solid var(--c);
+        transform-origin: bottom center;
+        transform: rotate(-2deg);
+      }
+      .flower__grass--bottom {
+        margin-top: -2px;
+        width: var(--line-w);
+        height: 25vmin;
+        background-image: linear-gradient(to top, transparent, var(--c));
+      }
+      .flower__grass__leaf {
+        --size: 10vmin;
+        position: absolute;
+        width: calc(var(--size) * 2.1);
+        height: var(--size);
+        border-top-left-radius: var(--size);
+        border-top-right-radius: var(--size);
+        background-image: linear-gradient(
+          to top,
+          transparent,
+          transparent 30%,
+          var(--c)
+        );
+        z-index: 100;
+      }
+      .flower__grass__leaf--1 {
+        top: -6%;
+        left: 30%;
+        --size: 6vmin;
+        transform: rotate(-20deg);
+        animation: growing-grass-ans--1 2s 2.6s backwards;
+      }
+      @keyframes growing-grass-ans--1 {
+        0% {
+          transform-origin: bottom left;
+          transform: rotate(-20deg) scale(0);
+        }
+      }
+      .flower__grass__leaf--2 {
+        top: -5%;
+        left: -110%;
+        --size: 6vmin;
+        transform: rotate(10deg);
+        animation: growing-grass-ans--2 2s 2.4s linear backwards;
+      }
+      @keyframes growing-grass-ans--2 {
+        0% {
+          transform-origin: bottom right;
+          transform: rotate(10deg) scale(0);
+        }
+      }
+      .flower__grass__leaf--3 {
+        top: 5%;
+        left: 60%;
+        --size: 8vmin;
+        transform: rotate(-18deg) rotateX(-20deg);
+        animation: growing-grass-ans--3 2s 2.2s linear backwards;
+      }
+      @keyframes growing-grass-ans--3 {
+        0% {
+          transform-origin: bottom left;
+          transform: rotate(-18deg) rotateX(-20deg) scale(0);
+        }
+      }
+      .flower__grass__leaf--4 {
+        top: 6%;
+        left: -135%;
+        --size: 8vmin;
+        transform: rotate(2deg);
+        animation: growing-grass-ans--4 2s 2s linear backwards;
+      }
+      @keyframes growing-grass-ans--4 {
+        0% {
+          transform-origin: bottom right;
+          transform: rotate(2deg) scale(0);
+        }
+      }
+      .flower__grass__leaf--5 {
+        top: 20%;
+        left: 60%;
+        --size: 10vmin;
+        transform: rotate(-24deg) rotateX(-20deg);
+        animation: growing-grass-ans--5 2s 1.8s linear backwards;
+      }
+      @keyframes growing-grass-ans--5 {
+        0% {
+          transform-origin: bottom left;
+          transform: rotate(-24deg) rotateX(-20deg) scale(0);
+        }
+      }
+      .flower__grass__leaf--6 {
+        top: 22%;
+        left: -180%;
+        --size: 10vmin;
+        transform: rotate(10deg);
+        animation: growing-grass-ans--6 2s 1.6s linear backwards;
+      }
+      @keyframes growing-grass-ans--6 {
+        0% {
+          transform-origin: bottom right;
+          transform: rotate(10deg) scale(0);
+        }
+      }
+      .flower__grass__leaf--7 {
+        top: 39%;
+        left: 70%;
+        --size: 10vmin;
+        transform: rotate(-10deg);
+        animation: growing-grass-ans--7 2s 1.4s linear backwards;
+      }
+      @keyframes growing-grass-ans--7 {
+        0% {
+          transform-origin: bottom left;
+          transform: rotate(-10deg) scale(0);
+        }
+      }
+      .flower__grass__leaf--8 {
+        top: 40%;
+        left: -215%;
+        --size: 11vmin;
+        transform: rotate(10deg);
+        animation: growing-grass-ans--8 2s 1.2s linear backwards;
+      }
+      @keyframes growing-grass-ans--8 {
+        0% {
+          transform-origin: bottom right;
+          transform: rotate(10deg) scale(0);
+        }
+      }
+      .flower__grass__overlay {
+        position: absolute;
+        top: -10%;
+        right: 0%;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.6);
+        filter: blur(1.5vmin);
+        z-index: 100;
+      }
+      .flower__g-long {
+        --w: 2vmin;
+        --h: 6vmin;
+        --c: #159faa; /* mas helecho */
+    /* color hojas */     position: absolute;
+        bottom: 10vmin;
+        left: -3vmin;
+        transform-origin: bottom center;
+        transform: rotate(-30deg) rotateY(-20deg);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        animation: flower-g-long-ans 3s linear infinite;
+      }
+      @keyframes flower-g-long-ans {
+        0%,
+        100% {
+          transform: rotate(-30deg) rotateY(-20deg);
+        }
+        50% {
+          transform: rotate(-32deg) rotateY(-20deg);
+        }
+      }
+      .flower__g-long__top {
+        top: calc(var(--h) * -1);
+        width: calc(var(--w) + 1vmin);
+        height: var(--h);
+        border-top-right-radius: 100%;
+        border-right: 0.7vmin solid var(--c);
+        transform: translate(-0.7vmin, 1vmin);
+      }
+      .flower__g-long__bottom {
+        width: var(--w);
+        height: 50vmin;
+        transform-origin: bottom center;
+        background-image: linear-gradient(to top, transparent 30%, var(--c));
+        box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.5);
+        clip-path: polygon(35% 0, 65% 1%, 100% 100%, 0% 100%);
+      }
+      .flower__g-right {
+        position: absolute;
+        bottom: 6vmin;
+        left: -2vmin;
+        transform-origin: bottom left;
+        transform: rotate(20deg);
+      }
+      .flower__g-right .leaf {
+        width: 30vmin;
+        height: 50vmin;
+        border-top-left-radius: 100%;
+        border-left: 2vmin solid #079097; /* color pasto */
+       background-image: linear-gradient(
+          to bottom,
+          transparent,
+          var(--dark-color) 60%
+        );
+        mask-image: linear-gradient(to top, transparent 30%, #079097 6%); /* color pasto */
+      }
+      .flower__g-right--1 {
+        animation: flower-g-right-ans 2.5s linear infinite;
+      }
+      .flower__g-right--2 {
+        left: 5vmin;
+        transform: rotateY(-180deg);
+        animation: flower-g-right-ans--2 3s linear infinite;
+      }
+      .flower__g-right--2 .leaf {
+        height: 75vmin;
+        filter: blur(0.3vmin);
+        opacity: 0.8;
+      }
+      @keyframes flower-g-right-ans {
+        0%,
+        100% {
+          transform: rotate(20deg);
+        }
+        50% {
+          transform: rotate(24deg) rotateX(-20deg);
+        }
+      }
+      @keyframes flower-g-right-ans--2 {
+        0%,
+        100% {
+          transform: rotateY(-180deg) rotate(0deg) rotateX(-20deg);
+        }
+        50% {
+          transform: rotateY(-180deg) rotate(6deg) rotateX(-20deg);
+        }
+      }
+      .flower__g-front {
+        position: absolute;
+        bottom: 6vmin;
+        left: 2.5vmin;
+        z-index: 100;
+        transform-origin: bottom center;
+        transform: rotate(-28deg) rotateY(30deg) scale(1.04);
+        animation: flower__g-front-ans 2s linear infinite;
+      }
+      @keyframes flower__g-front-ans {
+        0%,
+        100% {
+          transform: rotate(-28deg) rotateY(30deg) scale(1.04);
+        }
+        50% {
+          transform: rotate(-35deg) rotateY(40deg) scale(1.04);
+        }
+      }
+      .flower__g-front__line {
+        width: 0.3vmin;
+        height: 20vmin;
+        background-image: linear-gradient(
+          to top,
+          transparent,
+          #079097, /* color pasto */
+         transparent 100%
+        );
+        position: relative;
+      }
+      .flower__g-front__leaf-wrapper {
+        position: absolute;
+        top: 0;
+        left: 0;
+        transform-origin: bottom left;
+        transform: rotate(10deg);
+      }
+      .flower__g-front__leaf-wrapper:nth-child(even) {
+        left: 0vmin;
+        transform: rotateY(-180deg) rotate(5deg);
+        animation: flower__g-front__leaf-left-ans 1s ease-in backwards;
+      }
+      .flower__g-front__leaf-wrapper:nth-child(odd) {
+        animation: flower__g-front__leaf-ans 1s ease-in backwards;
+      }
+      .flower__g-front__leaf-wrapper--1 {
+        top: -8vmin;
+        transform: scale(0.7);
+        animation: flower__g-front__leaf-ans 1s 5.5s ease-in backwards !important;
+      }
+      .flower__g-front__leaf-wrapper--2 {
+        top: -8vmin;
+        transform: rotateY(-180deg) scale(0.7) !important;
+        animation: flower__g-front__leaf-left-ans-2 1s 4.6s ease-in backwards !important;
+      }
+      .flower__g-front__leaf-wrapper--3 {
+        top: -3vmin;
+        animation: flower__g-front__leaf-ans 1s 4.6s ease-in backwards;
+      }
+      .flower__g-front__leaf-wrapper--4 {
+        top: -3vmin;
+        transform: rotateY(-180deg) scale(0.9) !important;
+        animation: flower__g-front__leaf-left-ans-2 1s 4.6s ease-in backwards !important;
+      }
+      @keyframes flower__g-front__leaf-left-ans-2 {
+        0% {
+          transform: rotateY(-180deg) scale(0);
+        }
+      }
+      .flower__g-front__leaf-wrapper--5,
+      .flower__g-front__leaf-wrapper--6 {
+        top: 2vmin;
+      }
+      .flower__g-front__leaf-wrapper--7,
+      .flower__g-front__leaf-wrapper--8 {
+        top: 6.5vmin;
+      }
+      .flower__g-front__leaf-wrapper--2 {
+        animation-delay: 5.2s !important;
+      }
+      .flower__g-front__leaf-wrapper--3 {
+        animation-delay: 4.9s !important;
+      }
+      .flower__g-front__leaf-wrapper--5 {
+        animation-delay: 4.3s !important;
+      }
+      .flower__g-front__leaf-wrapper--6 {
+        animation-delay: 4.1s !important;
+      }
+      .flower__g-front__leaf-wrapper--7 {
+        animation-delay: 3.8s !important;
+      }
+      .flower__g-front__leaf-wrapper--8 {
+        animation-delay: 3.5s !important;
+      }
+      @keyframes flower__g-front__leaf-ans {
+        0% {
+          transform: rotate(10deg) scale(0);
+        }
+      }
+      @keyframes flower__g-front__leaf-left-ans {
+        0% {
+          transform: rotateY(-180deg) rotate(5deg) scale(0);
+        }
+      }
+      .flower__g-front__leaf {
+        width: 10vmin;
+        height: 10vmin;
+        border-radius: 100% 0% 0% 100%/100% 100% 0% 0%;
+        box-shadow: inset 0 2px 1vmin rgba(44, 238, 252, 0.2);
+        background-image: linear-gradient(
+            to bottom left,
+            transparent,
+            var(--dark-color)
+          ),
+          linear-gradient(
+            to bottom right,
+            #159faa 50%, /* color hojas */ /* mas helecho */
+            transparent 50%,
+            transparent
+          );
+        -webkit-mask-image: linear-gradient(
+          to bottom right,
+          #159faa 50%, /* color hojas */ /* mas helecho */
+          transparent 50%,
+          transparent
+        );
+        mask-image: linear-gradient(
+          to bottom right,
+          #159faa 50%, /* color hojas */ /* mas helecho */
+          transparent 50%,
+          transparent
+        );
+      }
+      .flower__g-fr {
+        position: absolute;
+        bottom: -4vmin;
+        left: vmin;
+        transform-origin: bottom left;
+        z-index: 10;
+        animation: flower__g-fr-ans 2s linear infinite;
+      }
+      @keyframes flower__g-fr-ans {
+        0%,
+        100% {
+          transform: rotate(2deg);
+        }
+        50% {
+          transform: rotate(4deg);
+        }
+      }
+      .flower__g-fr .leaf {
+        width: 30vmin;
+        height: 50vmin;
+        border-top-left-radius: 100%;
+        border-left: 2vmin solid #079097; /* color pasto */
+       mask-image: linear-gradient(to top, transparent 25%, #079097 5%); /* color pasto */
+        position: relative;
+        z-index: 1;
+      }
+      .flower__g-fr__leaf {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 10vmin;
+        height: 10vmin;
+        border-radius: 100% 0% 0% 100%/100% 100% 0% 0%;
+        box-shadow: inset 0 2px 1vmin rgba(44, 238, 252, 0.2);
+        background-image: linear-gradient(
+            to bottom left,
+            transparent,
+            var(--dark-color) 98%
+          ),
+          linear-gradient(
+            to bottom right,
+            #23f0ff 45%,  /* hojas */
+            transparent 50%,
+            transparent
+          );
+        mask-image: linear-gradient(
+          135deg,
+          #159faa 40%, /* color hojas */ /* mas helecho */
+          transparent 50%,
+          transparent
+        );
+      }
+      .flower__g-fr__leaf--1 {
+        left: 20vmin;
+        transform: rotate(45deg);
+        animation: flower__g-fr-leaft-ans-1 0.5s 5.2s linear backwards;
+      }
+      @keyframes flower__g-fr-leaft-ans-1 {
+        0% {
+          transform-origin: left;
+          transform: rotate(45deg) scale(0);
+        }
+      }
+      .flower__g-fr__leaf--2 {
+        left: 12vmin;
+        top: -7vmin;
+        transform: rotate(25deg) rotateY(-180deg);
+        animation: flower__g-fr-leaft-ans-6 0.5s 5s linear backwards;
+      }
+      .flower__g-fr__leaf--3 {
+        left: 15vmin;
+        top: 6vmin;
+        transform: rotate(55deg);
+        animation: flower__g-fr-leaft-ans-5 0.5s 4.8s linear backwards;
+      }
+      .flower__g-fr__leaf--4 {
+        left: 6vmin;
+        top: -2vmin;
+        transform: rotate(25deg) rotateY(-180deg);
+        animation: flower__g-fr-leaft-ans-6 0.5s 4.6s linear backwards;
+      }
+      .flower__g-fr__leaf--5 {
+        left: 10vmin;
+        top: 14vmin;
+        transform: rotate(55deg);
+        animation: flower__g-fr-leaft-ans-5 0.5s 4.4s linear backwards;
+      }
+      @keyframes flower__g-fr-leaft-ans-5 {
+        0% {
+          transform-origin: left;
+          transform: rotate(55deg) scale(0);
+        }
+      }
+      .flower__g-fr__leaf--6 {
+        left: 0vmin;
+        top: 6vmin;
+        transform: rotate(25deg) rotateY(-180deg);
+        animation: flower__g-fr-leaft-ans-6 0.5s 4.2s linear backwards;
+      }
+      @keyframes flower__g-fr-leaft-ans-6 {
+        0% {
+          transform-origin: right;
+          transform: rotate(25deg) rotateY(-180deg) scale(0);
+        }
+      }
+      .flower__g-fr__leaf--7 {
+        left: 5vmin;
+        top: 22vmin;
+        transform: rotate(45deg);
+        animation: flower__g-fr-leaft-ans-7 0.5s 4s linear backwards;
+      }
+      @keyframes flower__g-fr-leaft-ans-7 {
+        0% {
+          transform-origin: left;
+          transform: rotate(45deg) scale(0);
+        }
+      }
+      .flower__g-fr__leaf--8 {
+        left: -4vmin;
+        top: 15vmin;
+        transform: rotate(15deg) rotateY(-180deg);
+        animation: flower__g-fr-leaft-ans-8 0.5s 3.8s linear backwards;
+      }
+      @keyframes flower__g-fr-leaft-ans-8 {
+        0% {
+          transform-origin: right;
+          transform: rotate(15deg) rotateY(-180deg) scale(0);
+        }
+      }
+
+      .long-g {
+        position: absolute;
+        bottom: 25vmin;
+        left: -42vmin;
+        transform-origin: bottom left;
+      }
+      .long-g--1 {
+        bottom: 0vmin;
+        transform: scale(0.8) rotate(-5deg);
+      }
+      .long-g--1 .leaf {
+        mask-image: linear-gradient(
+          to top,
+          transparent 40%,
+          #079097 8% /* color pasto */
+        ) !important;
+      }
+      .long-g--1 .leaf--1 {
+        --w: 5vmin;
+        --h: 60vmin;
+        left: -2vmin;
+        transform: rotate(3deg) rotateY(-180deg);
+      }
+      .long-g--2,
+      .long-g--3 {
+        bottom: -3vmin;
+        left: -35vmin;
+        transform-origin: center;
+        transform: scale(0.6) rotateX(60deg);
+      }
+      .long-g--2 .leaf,
+      .long-g--3 .leaf {
+        mask-image: linear-gradient(
+          to top,
+          transparent 50%,
+          #079097 8% /* color pasto */
+        ) !important;
+      }
+      .long-g--2 .leaf--1,
+      .long-g--3 .leaf--1 {
+        left: -1vmin;
+        transform: rotateY(-180deg);
+      }
+      .long-g--3 {
+        left: -17vmin;
+        bottom: 0vmin;
+      }
+      .long-g--3 .leaf {
+        mask-image: linear-gradient(
+          to top,
+          transparent 40%,
+          #079097 8% /* color pasto */
+        ) !important;
+      }
+      .long-g--4 {
+        left: 25vmin;
+        bottom: -3vmin;
+        transform-origin: center;
+        transform: scale(0.6) rotateX(60deg);
+      }
+      .long-g--4 .leaf {
+        mask-image: linear-gradient(
+          to top,
+          transparent 50%,
+          #079097 8% /* color pasto */
+        ) !important;
+      }
+      .long-g--5 {
+        left: 42vmin;
+        bottom: 0vmin;
+        transform: scale(0.8) rotate(2deg);
+      }
+      .long-g--6 {
+        left: 0vmin;
+        bottom: -20vmin;
+        z-index: 100;
+        filter: blur(0.3vmin);
+        transform: scale(0.8) rotate(2deg);
+      }
+      .long-g--7 {
+        left: 35vmin;
+        bottom: 20vmin;
+        z-index: -1;
+        filter: blur(0.3vmin);
+        transform: scale(0.6) rotate(2deg);
+        opacity: 0.7;
+      }
+      .long-g .leaf {
+        --w: 15vmin;
+        --h: 40vmin;
+        --c: #1aaa15;  /* color pasto */
+        position: absolute;
+        bottom: 0;
+        width: var(--w);
+        height: var(--h);
+        border-top-left-radius: 100%;
+        border-left: 2vmin solid var(--c);
+        mask-image: linear-gradient(to top, transparent 20%, var(--dark-color));
+        transform-origin: bottom center;
+      }
+      .long-g .leaf--0 {
+        left: 2vmin;
+        animation: leaf-ans-1 4s linear infinite;
+      }
+      .long-g .leaf--1 {
+        --w: 5vmin;
+        --h: 60vmin;
+        animation: leaf-ans-1 4s linear infinite;
+      }
+      .long-g .leaf--2 {
+        --w: 10vmin;
+        --h: 40vmin;
+        left: -0.5vmin;
+        bottom: 5vmin;
+        transform-origin: bottom left;
+        transform: rotateY(-180deg);
+        animation: leaf-ans-2 3s linear infinite;
+      }
+      .long-g .leaf--3 {
+        --w: 5vmin;
+        --h: 30vmin;
+        left: -1vmin;
+        bottom: 3.2vmin;
+        transform-origin: bottom left;
+        transform: rotate(-10deg) rotateY(-180deg);
+        animation: leaf-ans-3 3s linear infinite;
+      }
+
+      @keyframes leaf-ans-1 {
+        0%,
+        100% {
+          transform: rotate(-5deg) scale(1);
+        }
+        50% {
+          transform: rotate(5deg) scale(1.1);
+        }
+      }
+      @keyframes leaf-ans-2 {
+        0%,
+        100% {
+          transform: rotateY(-180deg) rotate(5deg);
+        }
+        50% {
+          transform: rotateY(-180deg) rotate(0deg) scale(1.1);
+        }
+      }
+      @keyframes leaf-ans-3 {
+        0%,
+        100% {
+          transform: rotate(-10deg) rotateY(-180deg);
+        }
+        50% {
+          transform: rotate(-20deg) rotateY(-180deg);
+        }
+      }
+      .grow-ans {
+        animation: grow-ans 2s var(--d) backwards;
+      }
+
+      @keyframes grow-ans {
+        0% {
+          transform: scale(0);
+          opacity: 0;
+        }
+      }
+      @keyframes light-ans {
+        0% {
+          opacity: 0;
+          transform: translateY(0vmin);
+        }
+        25% {
+          opacity: 1;
+          transform: translateY(-5vmin) translateX(-2vmin);
+        }
+        50% {
+          opacity: 1;
+          transform: translateY(-15vmin) translateX(2vmin);
+          filter: blur(0.2vmin);
+        }
+        75% {
+          transform: translateY(-20vmin) translateX(-2vmin);
+          filter: blur(0.2vmin);
+        }
+        100% {
+          transform: translateY(-30vmin);
+          opacity: 0;
+          filter: blur(1vmin);
+        }
+      }
+      @keyframes moving-flower-1 {
+        0%,
+        100% {
+          transform: rotate(2deg);
+        }
+        50% {
+          transform: rotate(-2deg);
+        }
+      }
+      @keyframes moving-flower-2 {
+        0%,
+        100% {
+          transform: rotate(18deg);
+        }
+        50% {
+          transform: rotate(14deg);
+        }
+      }
+      @keyframes moving-flower-3 {
+        0%,
+        100% {
+          transform: rotate(-18deg);
+        }
+        50% {
+          transform: rotate(-20deg) rotateY(-10deg);
+        }
+      }
+      @keyframes blooming-leaf-right {
+        0% {
+          transform-origin: left;
+          transform: rotate(70deg) rotateY(30deg) scale(0);
+        }
+      }
+      @keyframes blooming-leaf-left {
+        0% {
+          transform-origin: right;
+          transform: rotate(-70deg) rotateY(30deg) scale(0);
+        }
+      }
+      @keyframes grow-flower-tree {
+        0% {
+          height: 0;
+          border-radius: 1vmin;
+        }
+      }
+      @keyframes blooming-flower {
+        0% {
+          transform: scale(0);
+        }
+      }
+      @keyframes moving-grass {
+        0%,
+        100% {
+          transform: rotate(-48deg) rotateY(40deg);
+        }
+        50% {
+          transform: rotate(-50deg) rotateY(40deg);
+        }
+      }
+      @keyframes moving-grass--2 {
+        0%,
+        100% {
+          transform: scale(0.5) rotate(75deg) rotateX(10deg) rotateY(-200deg);
+        }
+        50% {
+          transform: scale(0.5) rotate(79deg) rotateX(10deg) rotateY(-200deg);
+        }
+      }
+      .growing-grass {
+        animation: growing-grass-ans 1s 2s backwards;
+      }
+
+      @keyframes growing-grass-ans {
+        0% {
+          transform: scale(0);
+        }
+      }
+      .not-loaded * {
+        animation-play-state: paused !important;
+      }
+      @media (max-width: 800px) {
+        .flowers {
+          margin-bottom: 70%;
+      }
+      h1{
+        font-size: 14px;
+        position: absolute;
+        top: 150px;
+      }
+      }
+      @media (min-width: 801px) {
+      h1{
+        font-size: 50px;
+      }
+      }
+    </style>
+    <script type="module">
+      onload = () => {
+        const c = setTimeout(() => {
+          document.body.classList.remove("not-loaded");
+          clearTimeout(c);
+        }, 1000);
+      };
+    </script>
+  </head>
+  <body class="not-loaded">
+    <div class="night"></div>
+    <h1>💙💙💙💙💙</h1>
+    <div class="flowers">
+      <div class="flower flower--1">
+        <div class="flower__leafs flower__leafs--1">
+          <div class="flower__leaf flower__leaf--1"></div>
+          <div class="flower__leaf flower__leaf--2"></div>
+          <div class="flower__leaf flower__leaf--3"></div>
+          <div class="flower__leaf flower__leaf--4"></div>
+
+          <div class="flower__white-circle"></div>
+
+          <div class="flower__light flower__light--1"></div>
+          <div class="flower__light flower__light--2"></div>
+          <div class="flower__light flower__light--3"></div>
+          <div class="flower__light flower__light--4"></div>
+          <div class="flower__light flower__light--5"></div>
+          <div class="flower__light flower__light--6"></div>
+          <div class="flower__light flower__light--7"></div>
+          <div class="flower__light flower__light--8"></div>
+        </div>
+        <div class="flower__line">
+          <div class="flower__line__leaf flower__line__leaf--1"></div>
+          <div class="flower__line__leaf flower__line__leaf--2"></div>
+          <div class="flower__line__leaf flower__line__leaf--3"></div>
+          <div class="flower__line__leaf flower__line__leaf--4"></div>
+          <div class="flower__line__leaf flower__line__leaf--5"></div>
+          <div class="flower__line__leaf flower__line__leaf--6"></div>
+        </div>
+      </div>
+
+      <div class="flower flower--2">
+        <div class="flower__leafs flower__leafs--2">
+          <div class="flower__leaf flower__leaf--1"></div>
+          <div class="flower__leaf flower__leaf--2"></div>
+          <div class="flower__leaf flower__leaf--3"></div>
+          <div class="flower__leaf flower__leaf--4"></div>
+          <div class="flower__white-circle"></div>
+
+          <div class="flower__light flower__light--1"></div>
+          <div class="flower__light flower__light--2"></div>
+          <div class="flower__light flower__light--3"></div>
+          <div class="flower__light flower__light--4"></div>
+          <div class="flower__light flower__light--5"></div>
+          <div class="flower__light flower__light--6"></div>
+          <div class="flower__light flower__light--7"></div>
+          <div class="flower__light flower__light--8"></div>
+        </div>
+        <div class="flower__line">
+          <div class="flower__line__leaf flower__line__leaf--1"></div>
+          <div class="flower__line__leaf flower__line__leaf--2"></div>
+          <div class="flower__line__leaf flower__line__leaf--3"></div>
+          <div class="flower__line__leaf flower__line__leaf--4"></div>
+        </div>
+      </div>
+
+      <div class="flower flower--3">
+        <div class="flower__leafs flower__leafs--3">
+          <div class="flower__leaf flower__leaf--1"></div>
+          <div class="flower__leaf flower__leaf--2"></div>
+          <div class="flower__leaf flower__leaf--3"></div>
+          <div class="flower__leaf flower__leaf--4"></div>
+          <div class="flower__white-circle"></div>
+
+          <div class="flower__light flower__light--1"></div>
+          <div class="flower__light flower__light--2"></div>
+          <div class="flower__light flower__light--3"></div>
+          <div class="flower__light flower__light--4"></div>
+          <div class="flower__light flower__light--5"></div>
+          <div class="flower__light flower__light--6"></div>
+          <div class="flower__light flower__light--7"></div>
+          <div class="flower__light flower__light--8"></div>
+        </div>
+        <div class="flower__line">
+          <div class="flower__line__leaf flower__line__leaf--1"></div>
+          <div class="flower__line__leaf flower__line__leaf--2"></div>
+          <div class="flower__line__leaf flower__line__leaf--3"></div>
+          <div class="flower__line__leaf flower__line__leaf--4"></div>
+        </div>
+      </div>
+
+      <div class="grow-ans" style="--d: 1.2s">
+        <div class="flower__g-long">
+          <div class="flower__g-long__top"></div>
+          <div class="flower__g-long__bottom"></div>
+        </div>
+      </div>
+
+      <div class="growing-grass">
+        <div class="flower__grass flower__grass--1">
+          <div class="flower__grass--top"></div>
+          <div class="flower__grass--bottom"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--1"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--2"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--3"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--4"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--5"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--6"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--7"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--8"></div>
+          <div class="flower__grass__overlay"></div>
+        </div>
+      </div>
+
+      <div class="growing-grass">
+        <div class="flower__grass flower__grass--2">
+          <div class="flower__grass--top"></div>
+          <div class="flower__grass--bottom"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--1"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--2"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--3"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--4"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--5"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--6"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--7"></div>
+          <div class="flower__grass__leaf flower__grass__leaf--8"></div>
+          <div class="flower__grass__overlay"></div>
+        </div>
+      </div>
+
+      <div class="grow-ans" style="--d: 2.4s">
+        <div class="flower__g-right flower__g-right--1">
+          <div class="leaf"></div>
+        </div>
+      </div>
+
+      <div class="grow-ans" style="--d: 2.8s">
+        <div class="flower__g-right flower__g-right--2">
+          <div class="leaf"></div>
+        </div>
+      </div>
+
+      <div class="grow-ans" style="--d: 2.8s">
+        <div class="flower__g-front">
+          <div
+            class="flower__g-front__leaf-wrapper flower__g-front__leaf-wrapper--1"
+          >
+            <div class="flower__g-front__leaf"></div>
+          </div>
+          <div
+            class="flower__g-front__leaf-wrapper flower__g-front__leaf-wrapper--2"
+          >
+            <div class="flower__g-front__leaf"></div>
+          </div>
+          <div
+            class="flower__g-front__leaf-wrapper flower__g-front__leaf-wrapper--3"
+          >
+            <div class="flower__g-front__leaf"></div>
+          </div>
+          <div
+            class="flower__g-front__leaf-wrapper flower__g-front__leaf-wrapper--4"
+          >
+            <div class="flower__g-front__leaf"></div>
+          </div>
+          <div
+            class="flower__g-front__leaf-wrapper flower__g-front__leaf-wrapper--5"
+          >
+            <div class="flower__g-front__leaf"></div>
+          </div>
+          <div
+            class="flower__g-front__leaf-wrapper flower__g-front__leaf-wrapper--6"
+          >
+            <div class="flower__g-front__leaf"></div>
+          </div>
+          <div
+            class="flower__g-front__leaf-wrapper flower__g-front__leaf-wrapper--7"
+          >
+            <div class="flower__g-front__leaf"></div>
+          </div>
+          <div
+            class="flower__g-front__leaf-wrapper flower__g-front__leaf-wrapper--8"
+          >
+            <div class="flower__g-front__leaf"></div>
+          </div>
+          <div class="flower__g-front__line"></div>
+        </div>
+      </div>
+
+      <div class="grow-ans" style="--d: 3.2s">
+        <div class="flower__g-fr">
+          <div class="leaf"></div>
+          <div class="flower__g-fr__leaf flower__g-fr__leaf--1"></div>
+          <div class="flower__g-fr__leaf flower__g-fr__leaf--2"></div>
+          <div class="flower__g-fr__leaf flower__g-fr__leaf--3"></div>
+          <div class="flower__g-fr__leaf flower__g-fr__leaf--4"></div>
+          <div class="flower__g-fr__leaf flower__g-fr__leaf--5"></div>
+          <div class="flower__g-fr__leaf flower__g-fr__leaf--6"></div>
+          <div class="flower__g-fr__leaf flower__g-fr__leaf--7"></div>
+          <div class="flower__g-fr__leaf flower__g-fr__leaf--8"></div>
+        </div>
+      </div>
+
+      <div class="long-g long-g--0">
+        <div class="grow-ans" style="--d: 3s">
+          <div class="leaf leaf--0"></div>
+        </div>
+        <div class="grow-ans" style="--d: 2.2s">
+          <div class="leaf leaf--1"></div>
+        </div>
+        <div class="grow-ans" style="--d: 3.4s">
+          <div class="leaf leaf--2"></div>
+        </div>
+        <div class="grow-ans" style="--d: 3.6s">
+          <div class="leaf leaf--3"></div>
+        </div>
+      </div>
+
+      <div class="long-g long-g--1">
+        <div class="grow-ans" style="--d: 3.6s">
+          <div class="leaf leaf--0"></div>
+        </div>
+        <div class="grow-ans" style="--d: 3.8s">
+          <div class="leaf leaf--1"></div>
+        </div>
+        <div class="grow-ans" style="--d: 4s">
+          <div class="leaf leaf--2"></div>
+        </div>
+        <div class="grow-ans" style="--d: 4.2s">
+          <div class="leaf leaf--3"></div>
+        </div>
+      </div>
+
+      <div class="long-g long-g--2">
+        <div class="grow-ans" style="--d: 4s">
+          <div class="leaf leaf--0"></div>
+        </div>
+        <div class="grow-ans" style="--d: 4.2s">
+          <div class="leaf leaf--1"></div>
+        </div>
+        <div class="grow-ans" style="--d: 4.4s">
+          <div class="leaf leaf--2"></div>
+        </div>
+        <div class="grow-ans" style="--d: 4.6s">
+          <div class="leaf leaf--3"></div>
+        </div>
+      </div>
+
+      <div class="long-g long-g--3">
+        <div class="grow-ans" style="--d: 4s">
+          <div class="leaf leaf--0"></div>
+        </div>
+        <div class="grow-ans" style="--d: 4.2s">
+          <div class="leaf leaf--1"></div>
+        </div>
+        <div class="grow-ans" style="--d: 3s">
+          <div class="leaf leaf--2"></div>
+        </div>
+        <div class="grow-ans" style="--d: 3.6s">
+          <div class="leaf leaf--3"></div>
+        </div>
+      </div>
+
+      <div class="long-g long-g--4">
+        <div class="grow-ans" style="--d: 4s">
+          <div class="leaf leaf--0"></div>
+        </div>
+        <div class="grow-ans" style="--d: 4.2s">
+          <div class="leaf leaf--1"></div>
+        </div>
+        <div class="grow-ans" style="--d: 3s">
+          <div class="leaf leaf--2"></div>
+        </div>
+        <div class="grow-ans" style="--d: 3.6s">
+          <div class="leaf leaf--3"></div>
+        </div>
+      </div>
+
+      <div class="long-g long-g--5">
+        <div class="grow-ans" style="--d: 4s">
+          <div class="leaf leaf--0"></div>
+        </div>
+        <div class="grow-ans" style="--d: 4.2s">
+          <div class="leaf leaf--1"></div>
+        </div>
+        <div class="grow-ans" style="--d: 3s">
+          <div class="leaf leaf--2"></div>
+        </div>
+        <div class="grow-ans" style="--d: 3.6s">
+          <div class="leaf leaf--3"></div>
+        </div>
+      </div>
+
+      <div class="long-g long-g--6">
+        <div class="grow-ans" style="--d: 4.2s">
+          <div class="leaf leaf--0"></div>
+        </div>
+        <div class="grow-ans" style="--d: 4.4s">
+          <div class="leaf leaf--1"></div>
+        </div>
+        <div class="grow-ans" style="--d: 4.6s">
+          <div class="leaf leaf--2"></div>
+        </div>
+        <div class="grow-ans" style="--d: 4.8s">
+          <div class="leaf leaf--3"></div>
+        </div>
+      </div>
+
+      <div class="long-g long-g--7">
+        <div class="grow-ans" style="--d: 3s">
+          <div class="leaf leaf--0"></div>
+        </div>
+        <div class="grow-ans" style="--d: 3.2s">
+          <div class="leaf leaf--1"></div>
+        </div>
+        <div class="grow-ans" style="--d: 3.5s">
+          <div class="leaf leaf--2"></div>
+        </div>
+        <div class="grow-ans" style="--d: 3.6s">
+          <div class="leaf leaf--3"></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
+
+
+===== blueprints\Flor_AP\main.py =====
+
+
+import os
+from flask import abort, render_template
+from . import flor_ap_bp
+from flask_login import login_required
+
+@flor_ap_bp.route('/')
+@login_required
+def mostrar_archivo():
+    archivo_html = 'Flor_AP.html'
+
+    # Validaciones de seguridad
+    if not archivo_html.endswith('.html'):
+        abort(404)
+    safe_path = os.path.normpath(archivo_html)
+    if '..' in safe_path or os.path.isabs(safe_path):
+        abort(404)
+
+    try:
+        return render_template(archivo_html)
+    except:
+        abort(404)
+
+
+===== blueprints\Flor_AP\__init__.py =====
+
+
+from flask import Blueprint
+
+flor_ap_bp = Blueprint(
+    'Flor_AP',
+    __name__,
+    url_prefix='/flor_ap',
+    template_folder='templates'
+)
+
+from . import main
+
+
+===== blueprints\Flor_AP\templates\Flor_AP.html =====
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animated Flower</title>
+    <style>
+        *,
+        *::after,
+        *::before {
+            padding: 0;
+            margin: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --color-bg: linear-gradient(to top, #010329, #000005);
+            --color-glass: linear-gradient(to left, #142544, #1a9092);
+            --color-water: linear-gradient(to left, #142544, #1b6d6e);
+            --dark-color: #000000;
+
+        }
+
+        body {
+            background-image: var(--color-bg);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            overflow: hidden;
+            margin: 0; /* Asegúrate de que no haya márgenes que afecten el layout */
+        }
+
+        
+      h1{
+        font-size: 40px;
+        text-align: center;
+        position: absolute;
+        top: 50px;
+        color: white;
+      }
+        
+        .night {
+            position: fixed;
+            left: 50%;
+            top: 0;
+            transform: translateX(-50%);
+            width: 100vw;
+            height: 100vh;
+            filter: blur(0.1vmin);
+            background-image: radial-gradient(
+                ellipse at top,
+                transparent 0%,
+                var(--dark-color)
+              ),
+              radial-gradient(
+                ellipse at bottom,
+                var(--dark-color),
+                rgba(145, 233, 255, 0.2)
+              ),
+              repeating-linear-gradient(
+                220deg,
+                black 0px,
+                black 19px,
+                transparent 19px,
+                transparent 22px
+              ),
+              repeating-linear-gradient(
+                189deg,
+                black 0px,
+                black 19px,
+                transparent 19px,
+                transparent 22px
+              ),
+              repeating-linear-gradient(
+                148deg,
+                black 0px,
+                black 19px,
+                transparent 19px,
+                transparent 22px
+              ),
+              linear-gradient(90deg, #00fffa, #f0f0f0);
+            z-index: -1; /* Asegúrate de que esté detrás del contenido */
+        }
+        
+    
+
+        .flower {
+            position: relative;
+        }
+
+        .flower__glass {
+            width: 20vmin;
+            height: 30vmin;
+            background-image: var(--color-glass);
+            clip-path: polygon(0 0, 100% 0, 85% 100%, 15% 100%);
+            opacity: .8;
+            position: relative;
+        }
+
+        .flower__glass::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            background-color: #182843;
+            width: 100%;
+            height: 2vmin;
+        }
+
+        .flower__glass::before {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            background-image: var(--color-water);
+            width: 100%;
+            height: 15vmin;
+        }
+
+        .f-wrapper {
+            position: absolute;
+            left: 45%;
+            bottom: 2vmin;
+        }
+
+        .f-wrapper--2 {
+            left: 50%;
+            bottom: 5%;
+            transform-origin: 10% left;
+            transform: rotate(20deg);
+        }
+
+        .f-wrapper--3 {
+            left: 30%;
+            bottom: 5%;
+            transform-origin: 10% left;
+            transform: rotate(-10deg);
+        }
+
+        .f-wrapper--3 .flower__line {
+            height: 45vmin;
+            position: relative;
+        }
+
+        .f-wrapper--3 .flower__line::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 6vmin;
+            height: 6vmin;
+            transform: translate(-69%, -30%) rotate(-5deg);
+            border-radius: 10vmin 10vmin 0 0;
+            border: 2vmin solid #104d4e;
+            border-bottom: transparent;
+            border-left: transparent;
+        }
+
+        .f-wrapper--3 .flower__line::before {
+            content: '';
+            position: absolute;
+            left: -40%;
+            top: -1%;
+            width: 6vmin;
+            height: 2vmin;
+            transform-origin: right;
+            transform: translate(-100%, -80%) rotate(-20deg);
+            background-color: #104d4e;
+            border-radius: 2vmin;
+        }
+
+        .f-wrapper--3 .flower__line {
+            background-image: linear-gradient(to top, #142544, #104d4e);
+        }
+
+
+        .f-wrapper--2 .flower__line {
+            height: 45vmin;
+        }
+
+        .f-wrapper--2 .f {
+            transform: translateX(-50%) rotate(20deg);
+        }
+
+        .f-wrapper--3 .f {
+            transform: translate(-350%, -50%) rotate(-120deg);
+        }
+
+        .f-wrapper--2 .flower__leaf:not(:first-child) {
+            width: 3.8vmin;
+            height: 10vmin;
+            background-image: linear-gradient(to bottom, #41BEFA, #67abca, #7b9ef7 99%);
+        }
+
+        .f-wrapper--3 .flower__leaf:not(:first-child) {
+            width: 3.8vmin;
+            height: 10vmin;
+            background-image: linear-gradient(to bottom, #faf55a, #dbd762, #d4d386 99%);
+        }
+
+        .f-wrapper--3 .flower__leaf--1 {
+            width: 8vmin;
+            height: 10vmin;
+            bottom: 2vmin;
+            background-color: #f1ec58;
+        }
+
+        .f-wrapper--2 .flower__leaf--1 {
+            width: 8vmin;
+            height: 10vmin;
+            bottom: 2vmin;
+            background-color: #57c5f8;
+        }
+
+        .f-wrapper--2 .f .flower__leaf--8 {
+            width: 10vmin;
+            height: 9vmin;
+            bottom: 3vmin;
+            left: -30%;
+            transform: rotate(-50deg);
+            background-image: linear-gradient(to left bottom, #41BEFA, #7b9ef7);
+            ;
+        }
+
+        .f-wrapper--3 .f .flower__leaf--8 {
+            width: 10vmin;
+            height: 9vmin;
+            left: -10% !important;
+            background-image: linear-gradient(to left bottom, #FAF341, #d4d386 );
+            ;
+        }
+
+        .flower__line {
+            width: 2vmin;
+            height: 56vmin;
+            background-image: linear-gradient(to left top, #82fdff 20%, #142544, #104d4e);
+            border-radius: 4vmin;
+        }
+
+        .f {
+            position: absolute;
+            top: 1vmin;
+            left: 50%;
+            transform: translateX(-50%) rotate(-10deg);
+            width: 2vmin;
+            height: 2vmin;
+        }
+
+         .flower__leaf {
+            position: absolute;
+            left: 50%;
+            bottom: 2vmin;
+            transform: translateX(-50%);
+            width: 5vmin;
+            height: 14vmin;
+            background-image: linear-gradient(to bottom, #ee4054, #fa7373, #f18d6e 99%);
+
+            clip-path: ellipse(50% 50% at 50% 50%);
+            transform-origin: center bottom;
+            animation: open-flower 2s 1s backwards;
+        }
+
+        .flower__leaf--1 {
+            width: 10vmin;
+            height: 12vmin;
+            bottom: 3vmin;
+            border-radius: 50% 50% 50% 50% / 80% 80% 20% 20%;
+            background-color: #ee4054;
+            background-image: none;
+            animation: open-flowe--middle 1.4s 1s backwards;
+        }
+
+        .flower__leaf--2 {
+            transform: translateX(-50%) rotate(-30deg);
+        }
+
+        .flower__leaf--3 {
+            transform: translateX(-50%) rotate(-50deg);
+        }
+
+        .flower__leaf--4 {
+            transform: translateX(-50%) rotate(-70deg);
+        }
+
+        .flower__leaf--5 {
+            transform: translateX(-50%) rotate(30deg);
+        }
+
+        .flower__leaf--6 {
+            transform: translateX(-50%) rotate(50deg);
+        }
+
+        .flower__leaf--7 {
+            transform: translateX(-50%) rotate(70deg);
+        }
+
+        .flower__leaf--8 {
+            width: 13vmin;
+            height: 11vmin;
+            bottom: 6vmin;
+            left: -30%;
+            border-radius: none;
+            clip-path: none;
+            border-radius: 10vmin 2vmin 10vmin 2vmin;
+            transform: rotate(-55deg);
+            background-image: linear-gradient(to left bottom, #ee4054, #eb8b8b, #f18d6e 98%);
+        }
+
+        .flower__fall-down--yellow {
+            animation: flower-fall-down-yellow 8s 1.2s linear forwards;
+        }
+
+        .flower__fall-down--pink {
+            animation: flower-fall-down-pink 5s 1.2s linear forwards;
+        }
+
+        .flower__fall-down--purple {
+            bottom: 4vmin;
+            animation: flower-fall-down-purple 6s 1.2s linear forwards, flower-falling 6s 7.2s linear infinite;
+        }
+
+
+        @keyframes open-flower {
+            0% {
+                transform: translateX(-50%) rotate(0);
+            }
+        }
+
+        @keyframes open-flowe--middle {
+            0% {
+                opacity: 0;
+                transform: translateX(-50%) scale(0);
+            }
+        }
+
+        @keyframes flower-fall-down-pink {
+
+            0% {
+                transform: rotate(-55deg);
+            }
+
+            50% {
+                transform: rotateX(-100deg);
+            }
+
+            100% {
+                transform: translate(2vmin, 28vmin);
+            }
+
+        }
+
+        @keyframes flower-fall-down-yellow {
+
+            0% {
+                transform: rotate(-55deg);
+            }
+
+            50% {
+                bottom: 3vmin;
+                transform: rotateX(-100deg);
+            }
+
+            100% {
+                transform: translate(2vmin, 70vmin) rotate(150deg);
+            }
+
+        }
+
+        @keyframes flower-fall-down-purple {
+
+            0% {
+                transform: rotate(-50deg);
+            }
+
+            25% {
+                bottom: 1vmin;
+                transform: rotateX(-100deg);
+                perspective: 0px;
+            }
+
+            50% {
+                perspective: 0px;
+                transform: translate(-30vmin, 2vmin) rotate(90deg);
+            }
+
+            75% {
+                perspective: 0px;
+                transform: translate(-34vmin, -2vmin);
+            }
+
+            100% {
+                transform-origin: center;
+                transform: translate(-34vmin, -2vmin) rotateY(-80deg) rotateX(35deg);
+            }
+
+        }
+
+        @keyframes flower-falling {
+
+            0%,
+            100% {
+                transform-origin: center;
+                transform: translate(-34vmin, -2vmin) rotateY(-80deg) rotateX(35deg);
+            }
+
+            25% {
+                transform-origin: center;
+                transform: translate(-34.4vmin, -2vmin) rotateY(-84deg) rotateX(35deg);
+            }
+
+            50% {
+                transform-origin: center;
+                transform: translate(-32vmin, -4.2vmin) rotateY(-80deg) rotateX(35deg);
+            }
+
+            75% {
+                transform-origin: center;
+                transform: translate(-36vmin, 1.1vmin) rotateY(-80deg) rotateX(35deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="night"></div>
+    <h1>
+    </h1>
+    <div class="flower">
+        <div class="f-wrapper">
+            <div class="flower__line"></div>
+            <div class="f">
+                <div class="flower__leaf flower__leaf--1"></div>
+                <div class="flower__leaf flower__leaf--2"></div>
+                <div class="flower__leaf flower__leaf--3"></div>
+                <div class="flower__leaf flower__leaf--4"></div>
+                <div class="flower__leaf flower__leaf--5"></div>
+                <div class="flower__leaf flower__leaf--6"></div>
+                <div class="flower__leaf flower__leaf--7"></div>
+                <div class="flower__leaf flower__leaf--8 flower__fall-down--yellow"></div>
+            </div>
+        </div>
+
+        <div class="f-wrapper f-wrapper--2">
+            <div class="flower__line"></div>
+            <div class="f">
+                <div class="flower__leaf flower__leaf--1"></div>
+                <div class="flower__leaf flower__leaf--2"></div>
+                <div class="flower__leaf flower__leaf--3"></div>
+                <div class="flower__leaf flower__leaf--4"></div>
+                <div class="flower__leaf flower__leaf--5"></div>
+                <div class="flower__leaf flower__leaf--6"></div>
+                <div class="flower__leaf flower__leaf--7"></div>
+                <div class="flower__leaf flower__leaf--8 flower__fall-down--pink"></div>
+            </div>
+        </div>
+            <div class="f-wrapper f-wrapper--3">
+            <div class="flower__line"></div>
+            <div class="f">
+                <div class="flower__leaf flower__leaf--1"></div>
+                <div class="flower__leaf flower__leaf--2"></div>
+                <div class="flower__leaf flower__leaf--3"></div>
+                <div class="flower__leaf flower__leaf--4"></div>
+                <div class="flower__leaf flower__leaf--5"></div>
+                <div class="flower__leaf flower__leaf--6"></div>
+                <div class="flower__leaf flower__leaf--7"></div>
+                <div class="flower__leaf flower__leaf--8 flower__fall-down--purple"></div>
+            </div>
+        </div>
+        <div class="flower__glass"></div>
+    </div>
+</body>
+</html>
+
+===== templates\dashboard.html =====
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap');
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: url('{{ url_for('static', filename='images/hoober.jpg') }}') no-repeat center center/cover;
+            color: #fff;
+        }
+
+        .card {
+            background: rgba(0, 0, 0, 0.13);
+            backdrop-filter: blur(5px);
+            border-radius: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 18px rgba(0, 0, 0, 0.6);
+            overflow: hidden;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            cursor: default;
+        }
+
+        .card:hover,
+        .card:focus-within {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 24px rgba(255, 255, 255, 0.15);
+            outline: none;
+        }
+
+        .card > div {
+            color: #e1e1e1;
+        }
+
+        .card h4 {
+            color: #eeeeee;
+        }
+
+        .card p {
+            color: #cccccc;
+        }
+
+        .card button {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border: none;
+            border-radius: 0.5rem;
+            padding: 0.5em 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+            width: 100%;
+        }
+
+        .card button:hover,
+        .card button:focus {
+            background-color: rgba(255, 255, 255, 0.25);
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+            outline: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+  <main class="py-16">
+    <div class="container mx-auto px-4">
+      <h2 class="text-3xl font-semibold text-center text-white mb-12">
+        Bienvenido {{ current_user.username }}
+      </h2>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+        {% for tarjeta in tarjetas %}
+          <div class="card card-hover rounded-2xl overflow-hidden shadow-md">
+            <div class="h-48 flex items-center justify-center">
+              <img src="{{ url_for('static', filename=tarjeta.imagen_url) }}" alt="{{ tarjeta.nombre }}" class="w-full h-full object-cover" />
+            </div>
+            <div class="p-6 flex flex-col flex-grow">
+              <h4 class="text-xl font-semibold mb-4">{{ tarjeta.nombre | replace('_', ' ') }}</h4>
+
+              {% if tarjeta.carpeta|lower == 'admin' %}
+                {% if current_user.username == 'admin' %}
+                  <a href="{{ url_for('admin.index') }}" target="_blank">
+                    <button>Abrir</button>
+                  </a>
+                {% else %}
+                  <div class="text-red-400 font-medium mt-2">Acceso restringido</div>
+                {% endif %}
+              {% else %}
+                <a href="{{ url_for('mostrar_tarjeta_generica', carpeta=tarjeta.carpeta, archivo_html=tarjeta.archivo_html) }}" target="_blank">
+                  <button>Abrir</button>
+                </a>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="text-center mt-16">
+        <a href="{{ url_for('logout') }}">
+          <button class="bg-white border border-white-600 text-black hover:bg-black-50 px-8 py-3 rounded-full font-medium transition shadow-sm hover:shadow-white">
+            Cerrar sesión
+          </button>
+        </a>
+      </div>
+    </div>
+  </main>
+
+</body>
+</html>
+
+
+===== templates\login.html =====
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Quicksand&display=swap");
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Quicksand', sans-serif;
+    }
+
+    body {
+      height: 100vh;
+      background: url('{{ url_for('static', filename='images/hoober.jpg') }}') no-repeat center center/cover;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      color: #fff;
+      padding: 1em;
+      font-family: 'Quicksand', sans-serif;
+    }
+
+    h2 {
+      font-size: clamp(1.8rem, 5vw, 2.5rem);
+      font-weight: 600;
+      text-align: center;
+      text-shadow: 0 0 10px #808080;
+    }
+
+    ul.flash-messages {
+      list-style-type: none;
+      margin-bottom: 1em;
+      padding-left: 0;
+      width: 100%;
+      max-width: 400px;
+    }
+    ul.flash-messages li {
+      font-weight: 600;
+      padding: 0.75em 1em;
+      border-radius: 5px;
+      margin-bottom: 0.5em;
+    }
+    ul.flash-messages li.danger {
+      background-color: #f8d7da;
+      color: #842029;
+      border: 1px solid #f5c2c7;
+    }
+    ul.flash-messages li.success {
+      background-color: #d1e7dd;
+      color: #0f5132;
+      border: 1px solid #badbcc;
+    }
+    ul.flash-messages li.other {
+      background-color: #e2e3e5;
+      color: #41464b;
+      border: 1px solid #d3d6d8;
+    }
+
+    form {
+      width: 100%;
+      max-width: 400px;
+      background: rgba(255, 255, 255, 0.13);
+      border-radius: 17px;
+      backdrop-filter: blur(5px);
+      border: 5px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 0 40px rgba(255, 255, 255, 0.6);
+      padding: 2em;
+      display: flex;
+      flex-direction: column;
+    }
+
+    label {
+      font-size: clamp(1rem, 4vw, 1.5rem);
+      font-weight: 800;
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      color: #fff;
+    }
+
+    input {
+      width: 100%;
+      padding: 0.8em 1em;
+      font-size: 1rem;
+      background: rgba(0, 0, 0, 0.22);
+      border: 2px solid #38363654;
+      border-radius: 5px;
+      color: #fff;
+      transition: background 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    input::placeholder {
+      color: #e5e5e5;
+    }
+
+    input:hover,
+    input:focus {
+      background: #434343;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+      outline: none;
+    }
+
+    button {
+      margin-top: 2em;
+      padding: 0.8em;
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #e1e1e1;
+      background: rgba(0, 0, 0, 0.22);
+      border: 2px solid #38363654;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background 0.4s ease, box-shadow 0.4s ease;
+    }
+
+    button:hover,
+    button:focus {
+      background: #629677;
+      box-shadow: 0 0 10px rgba(98, 150, 119, 0.7);
+      outline: none;
+    }
+
+    /* Media query para pantallas pequeñas */
+    @media (max-width: 400px) {
+      form {
+        padding: 1em;
+      }
+      label {
+        font-size: 1.1rem;
+      }
+      input,
+      button {
+        font-size: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <ul class="flash-messages">
+        {% for category, message in messages %}
+          <li class="{% if category == 'danger' %}danger{% elif category == 'success' %}success{% else %}other{% endif %}">
+            {{ message }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+
+  <form method="POST" novalidate>
+      <h2>Iniciar Sesion</h2>
+    <label for="username">Usuario:</label>
+    <input type="text" name="username" id="username" placeholder="Nombre de usuario" required autocomplete="username" />
+
+    <label for="password">Contraseña:</label>
+    <input type="password" name="password" id="password" placeholder="Contraseña" required autocomplete="current-password" />
+
+    <button type="submit">Entrar</button>
+  </form>
+</body>
+</html>
+
+
+===== templates\__init__.py =====
+
+
+
+===== templates\errors\403.html =====
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Longcat Spinner | @coding.stella</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <style>
+    * { border: 0; box-sizing: border-box; margin: 0; padding: 0; }
+
+    .error-header {
+      position: absolute;
+      top: 10%;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      z-index: 1;
+      width: 100%;
+      pointer-events: none;
+    }
+    .error-header h1 {
+      font-size: clamp(2em, 10vw, 5em);
+      color: #b0b0b0;
+      text-shadow: 0 0 10px #808080;
+    }
+
+    .error-footer {
+      position: absolute;
+      bottom: 10%;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      z-index: 1;
+      width: 100%;
+      pointer-events: none;
+    }
+    .error-footer p {
+      font-size: clamp(0.8em, 3vw, 1.2em);
+      margin-bottom: 0.5em;
+      color: #d1d1d1;
+    }
+
+    .error-message {
+      font-size: clamp(1em, 4vw, 1.5em);
+      color: #b0b0b0;
+      margin-bottom: 1em;
+    }
+
+    body {
+      background: #000;
+      font-size: clamp(14px, 2vw, 20px);
+      height: 100vh;
+      line-height: 1.5;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .cat {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(90vw, 16em);
+      height: min(90vw, 16em);
+      z-index: 2;
+    }
+    .cat__segment {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 3em;
+      height: 2em;
+      transform: translate(-50%, -50%);
+    }
+    .cat__segment:before {
+      animation: loop 2s cubic-bezier(0.6, 0, 0.4, 1) infinite running;
+      background: linear-gradient(90deg, #b0b0b0 20%, #d6d4d4 20% 80%, #b0b0b0 80%);
+      border-radius: 0.25em;
+      content: "";
+      display: block;
+      will-change: transform;
+      width: 100%;
+      height: 100%;
+    }
+    .cat__segment:first-of-type {
+      width: 4em;
+      height: 4em;
+      z-index: 1;
+    }
+    .cat__segment:first-of-type:before {
+      background:
+        radial-gradient(0.25em 0.25em at 1.25em 1.6em,#ffffff 48%,transparent 50%),
+        radial-gradient(0.75em 0.75em at 1.25em 1.75em,#606060 48%,transparent 50%),
+        radial-gradient(0.25em 0.25em at 2.75em 1.6em,#ffffff 48%,transparent 50%),
+        radial-gradient(0.75em 0.75em at 2.75em 1.75em,#606060 48%,transparent 50%),
+        radial-gradient(0.9em 0.8em at 1.5em 2.65em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(0.9em 0.8em at 2.5em 2.65em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(1em 0.8em at 1.6em 2.75em,#808080 48%,transparent 50%),
+        radial-gradient(1em 0.8em at 2.4em 2.75em,#808080 48%,transparent 50%),
+        radial-gradient(0.75em 0.75em at 50% 2.5em,#d0d0d0 48%,transparent 50%),
+        radial-gradient(4em 3em at 50% 2em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(4em 3em at 50% 2.2em,#8f8f8f 48%,transparent 50%),
+        radial-gradient(1em 3em at 0.75em 1.5em,#d0d0d0 39%,#b0b0b0 40% 49%,transparent 50%),
+        radial-gradient(1em 3em at 3.25em 1.5em,#d0d0d0 39%,#b0b0b0 40% 49%,transparent 50%),
+        radial-gradient(1em 2em at 0.5em 2.8em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(1em 2em at 0.5em 3em,#bcbaba 48%,transparent 50%),
+        radial-gradient(1em 2em at 3.5em 2.8em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(1em 2em at 3.5em 3em,#bcbaba 48%,transparent 50%);
+      background-repeat: no-repeat;
+    }
+    .cat__segment:last-of-type {
+      width: 3em;
+      height: 4em;
+    }
+    .cat__segment:last-of-type:before {
+      background:
+        linear-gradient(90deg,#b0b0b0 20%,#bcbaba 20% 80%,#b0b0b0 80%) 0 1.5em/3em 0.5em,
+        radial-gradient(3em 2em at top center,#bcbaba 30%,#b0b0b0 31% 48%,transparent 50%) 0 2em/3em 2em,
+        radial-gradient(1em 4em at 0.5em 0,#b0b0b0 48%,transparent 50%) 0 2em/3em 2em,
+        radial-gradient(1em 4em at 2.5em 0,#b0b0b0 48%,transparent 50%) 0 2em/3em 2em;
+      background-repeat: no-repeat;
+    }
+
+    /* Regla común para rotación y delay */
+    /* Solo 30 líneas para los segmentos restantes, mucho menos repetidas que antes */
+    /* Si usas un preprocesador puedes reducir aún más */
+    .cat__segment:nth-of-type(1)  { transform: translate(-50%, -50%) rotate(-20deg);}
+    .cat__segment:nth-of-type(1):before  { animation-delay: 0s;    transform: translateX(6em);}
+    .cat__segment:nth-of-type(2)  { transform: translate(-50%, -50%) rotate(-18.67deg);}
+    .cat__segment:nth-of-type(2):before  { animation-delay: 0.02s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(3)  { transform: translate(-50%, -50%) rotate(-17.33deg);}
+    .cat__segment:nth-of-type(3):before  { animation-delay: 0.04s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(4)  { transform: translate(-50%, -50%) rotate(-16deg);}
+    .cat__segment:nth-of-type(4):before  { animation-delay: 0.06s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(5)  { transform: translate(-50%, -50%) rotate(-14.67deg);}
+    .cat__segment:nth-of-type(5):before  { animation-delay: 0.08s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(6)  { transform: translate(-50%, -50%) rotate(-13.33deg);}
+    .cat__segment:nth-of-type(6):before  { animation-delay: 0.10s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(7)  { transform: translate(-50%, -50%) rotate(-12deg);}
+    .cat__segment:nth-of-type(7):before  { animation-delay: 0.12s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(8)  { transform: translate(-50%, -50%) rotate(-10.67deg);}
+    .cat__segment:nth-of-type(8):before  { animation-delay: 0.14s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(9)  { transform: translate(-50%, -50%) rotate(-9.33deg);}
+    .cat__segment:nth-of-type(9):before  { animation-delay: 0.16s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(10) { transform: translate(-50%, -50%) rotate(-8deg);}
+    .cat__segment:nth-of-type(10):before { animation-delay: 0.18s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(11) { transform: translate(-50%, -50%) rotate(-6.67deg);}
+    .cat__segment:nth-of-type(11):before { animation-delay: 0.20s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(12) { transform: translate(-50%, -50%) rotate(-5.33deg);}
+    .cat__segment:nth-of-type(12):before { animation-delay: 0.22s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(13) { transform: translate(-50%, -50%) rotate(-4deg);}
+    .cat__segment:nth-of-type(13):before { animation-delay: 0.24s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(14) { transform: translate(-50%, -50%) rotate(-2.67deg);}
+    .cat__segment:nth-of-type(14):before { animation-delay: 0.26s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(15) { transform: translate(-50%, -50%) rotate(-1.33deg);}
+    .cat__segment:nth-of-type(15):before { animation-delay: 0.28s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(16) { transform: translate(-50%, -50%) rotate(0deg);}
+    .cat__segment:nth-of-type(16):before { animation-delay: 0.30s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(17) { transform: translate(-50%, -50%) rotate(1.33deg);}
+    .cat__segment:nth-of-type(17):before { animation-delay: 0.32s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(18) { transform: translate(-50%, -50%) rotate(2.67deg);}
+    .cat__segment:nth-of-type(18):before { animation-delay: 0.34s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(19) { transform: translate(-50%, -50%) rotate(4deg);}
+    .cat__segment:nth-of-type(19):before { animation-delay: 0.36s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(20) { transform: translate(-50%, -50%) rotate(5.33deg);}
+    .cat__segment:nth-of-type(20):before { animation-delay: 0.38s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(21) { transform: translate(-50%, -50%) rotate(6.67deg);}
+    .cat__segment:nth-of-type(21):before { animation-delay: 0.40s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(22) { transform: translate(-50%, -50%) rotate(8deg);}
+    .cat__segment:nth-of-type(22):before { animation-delay: 0.42s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(23) { transform: translate(-50%, -50%) rotate(9.33deg);}
+    .cat__segment:nth-of-type(23):before { animation-delay: 0.44s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(24) { transform: translate(-50%, -50%) rotate(10.67deg);}
+    .cat__segment:nth-of-type(24):before { animation-delay: 0.46s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(25) { transform: translate(-50%, -50%) rotate(12deg);}
+    .cat__segment:nth-of-type(25):before { animation-delay: 0.48s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(26) { transform: translate(-50%, -50%) rotate(13.33deg);}
+    .cat__segment:nth-of-type(26):before { animation-delay: 0.50s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(27) { transform: translate(-50%, -50%) rotate(14.67deg);}
+    .cat__segment:nth-of-type(27):before { animation-delay: 0.52s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(28) { transform: translate(-50%, -50%) rotate(16deg);}
+    .cat__segment:nth-of-type(28):before { animation-delay: 0.54s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(29) { transform: translate(-50%, -50%) rotate(17.33deg);}
+    .cat__segment:nth-of-type(29):before { animation-delay: 0.56s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(30) { transform: translate(-50%, -50%) rotate(18.67deg);}
+    .cat__segment:nth-of-type(30):before { animation-delay: 0.58s; transform: translateX(6em);}
+
+    @keyframes loop {
+      from { transform: rotate(0) translateX(6em);}
+      to   { transform: rotate(-1turn) translateX(6em);}
+    }
+  </style>
+</head>
+<body>
+  <div class="cat">
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+  </div>
+  <div class="error-header">
+    <h1>403</h1>
+  </div>
+  <div class="error-footer">
+    <div class="error-message">
+      <p>¡Gato no entendio!</p>
+      <p>La solicitud no fue comprendida</p>
+    </div>
+  </div>
+</body>
+</html>
+
+===== templates\errors\404.html =====
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Longcat Spinner | @coding.stella</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <style>
+    * { border: 0; box-sizing: border-box; margin: 0; padding: 0; }
+
+    .error-header {
+      position: absolute;
+      top: 10%;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      z-index: 1;
+      width: 100%;
+    }
+    .error-header h1 {
+      color: inherit;
+      text-decoration: none;
+      font-size: clamp(2em, 10vw, 5em);
+      color: #b0b0b0;
+      text-shadow: 0 0 10px #808080;
+      transition: color 0.2s ease;
+    }
+    .error-header h1 a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .error-header h1 a:hover,
+    .error-header h1 a:visited,
+    .error-header h1 a:active,
+    .error-header h1 a:focus {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .error-footer {
+      position: absolute;
+      bottom: 10%;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      z-index: 1;
+      width: 100%;
+      pointer-events: none;
+    }
+    .error-footer p {
+      font-size: clamp(0.8em, 3vw, 1.2em);
+      margin-bottom: 0.5em;
+      color: #d1d1d1;
+    }
+
+    .error-message {
+      font-size: clamp(1em, 4vw, 1.5em);
+      color: #b0b0b0;
+      margin-bottom: 1em;
+    }
+
+    body {
+      background: url('{{ url_for('static', filename='images/hoober.jpg') }}') no-repeat center center/cover;
+      font-size: clamp(14px, 2vw, 20px);
+      height: 100vh;
+      line-height: 1.5;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .cat {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(90vw, 16em);
+      height: min(90vw, 16em);
+      z-index: 2;
+    }
+    .cat__segment {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 3em;
+      height: 2em;
+      transform: translate(-50%, -50%);
+    }
+    .cat__segment:before {
+      animation: loop 2s cubic-bezier(0.6, 0, 0.4, 1) infinite running;
+      background: linear-gradient(90deg, #b0b0b0 20%, #d6d4d4 20% 80%, #b0b0b0 80%);
+      border-radius: 0.25em;
+      content: "";
+      display: block;
+      will-change: transform;
+      width: 100%;
+      height: 100%;
+    }
+    .cat__segment:first-of-type {
+      width: 4em;
+      height: 4em;
+      z-index: 1;
+    }
+    .cat__segment:first-of-type:before {
+      background:
+        radial-gradient(0.25em 0.25em at 1.25em 1.6em,#ffffff 48%,transparent 50%),
+        radial-gradient(0.75em 0.75em at 1.25em 1.75em,#606060 48%,transparent 50%),
+        radial-gradient(0.25em 0.25em at 2.75em 1.6em,#ffffff 48%,transparent 50%),
+        radial-gradient(0.75em 0.75em at 2.75em 1.75em,#606060 48%,transparent 50%),
+        radial-gradient(0.9em 0.8em at 1.5em 2.65em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(0.9em 0.8em at 2.5em 2.65em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(1em 0.8em at 1.6em 2.75em,#808080 48%,transparent 50%),
+        radial-gradient(1em 0.8em at 2.4em 2.75em,#808080 48%,transparent 50%),
+        radial-gradient(0.75em 0.75em at 50% 2.5em,#d0d0d0 48%,transparent 50%),
+        radial-gradient(4em 3em at 50% 2em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(4em 3em at 50% 2.2em,#8f8f8f 48%,transparent 50%),
+        radial-gradient(1em 3em at 0.75em 1.5em,#d0d0d0 39%,#b0b0b0 40% 49%,transparent 50%),
+        radial-gradient(1em 3em at 3.25em 1.5em,#d0d0d0 39%,#b0b0b0 40% 49%,transparent 50%),
+        radial-gradient(1em 2em at 0.5em 2.8em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(1em 2em at 0.5em 3em,#bcbaba 48%,transparent 50%),
+        radial-gradient(1em 2em at 3.5em 2.8em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(1em 2em at 3.5em 3em,#bcbaba 48%,transparent 50%);
+      background-repeat: no-repeat;
+    }
+    .cat__segment:last-of-type {
+      width: 3em;
+      height: 4em;
+    }
+    .cat__segment:last-of-type:before {
+      background:
+        linear-gradient(90deg,#b0b0b0 20%,#bcbaba 20% 80%,#b0b0b0 80%) 0 1.5em/3em 0.5em,
+        radial-gradient(3em 2em at top center,#bcbaba 30%,#b0b0b0 31% 48%,transparent 50%) 0 2em/3em 2em,
+        radial-gradient(1em 4em at 0.5em 0,#b0b0b0 48%,transparent 50%) 0 2em/3em 2em,
+        radial-gradient(1em 4em at 2.5em 0,#b0b0b0 48%,transparent 50%) 0 2em/3em 2em;
+      background-repeat: no-repeat;
+    }
+
+    /* Regla común para rotación y delay */
+    /* Solo 30 líneas para los segmentos restantes, mucho menos repetidas que antes */
+    /* Si usas un preprocesador puedes reducir aún más */
+    .cat__segment:nth-of-type(1)  { transform: translate(-50%, -50%) rotate(-20deg);}
+    .cat__segment:nth-of-type(1):before  { animation-delay: 0s;    transform: translateX(6em);}
+    .cat__segment:nth-of-type(2)  { transform: translate(-50%, -50%) rotate(-18.67deg);}
+    .cat__segment:nth-of-type(2):before  { animation-delay: 0.02s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(3)  { transform: translate(-50%, -50%) rotate(-17.33deg);}
+    .cat__segment:nth-of-type(3):before  { animation-delay: 0.04s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(4)  { transform: translate(-50%, -50%) rotate(-16deg);}
+    .cat__segment:nth-of-type(4):before  { animation-delay: 0.06s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(5)  { transform: translate(-50%, -50%) rotate(-14.67deg);}
+    .cat__segment:nth-of-type(5):before  { animation-delay: 0.08s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(6)  { transform: translate(-50%, -50%) rotate(-13.33deg);}
+    .cat__segment:nth-of-type(6):before  { animation-delay: 0.10s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(7)  { transform: translate(-50%, -50%) rotate(-12deg);}
+    .cat__segment:nth-of-type(7):before  { animation-delay: 0.12s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(8)  { transform: translate(-50%, -50%) rotate(-10.67deg);}
+    .cat__segment:nth-of-type(8):before  { animation-delay: 0.14s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(9)  { transform: translate(-50%, -50%) rotate(-9.33deg);}
+    .cat__segment:nth-of-type(9):before  { animation-delay: 0.16s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(10) { transform: translate(-50%, -50%) rotate(-8deg);}
+    .cat__segment:nth-of-type(10):before { animation-delay: 0.18s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(11) { transform: translate(-50%, -50%) rotate(-6.67deg);}
+    .cat__segment:nth-of-type(11):before { animation-delay: 0.20s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(12) { transform: translate(-50%, -50%) rotate(-5.33deg);}
+    .cat__segment:nth-of-type(12):before { animation-delay: 0.22s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(13) { transform: translate(-50%, -50%) rotate(-4deg);}
+    .cat__segment:nth-of-type(13):before { animation-delay: 0.24s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(14) { transform: translate(-50%, -50%) rotate(-2.67deg);}
+    .cat__segment:nth-of-type(14):before { animation-delay: 0.26s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(15) { transform: translate(-50%, -50%) rotate(-1.33deg);}
+    .cat__segment:nth-of-type(15):before { animation-delay: 0.28s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(16) { transform: translate(-50%, -50%) rotate(0deg);}
+    .cat__segment:nth-of-type(16):before { animation-delay: 0.30s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(17) { transform: translate(-50%, -50%) rotate(1.33deg);}
+    .cat__segment:nth-of-type(17):before { animation-delay: 0.32s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(18) { transform: translate(-50%, -50%) rotate(2.67deg);}
+    .cat__segment:nth-of-type(18):before { animation-delay: 0.34s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(19) { transform: translate(-50%, -50%) rotate(4deg);}
+    .cat__segment:nth-of-type(19):before { animation-delay: 0.36s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(20) { transform: translate(-50%, -50%) rotate(5.33deg);}
+    .cat__segment:nth-of-type(20):before { animation-delay: 0.38s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(21) { transform: translate(-50%, -50%) rotate(6.67deg);}
+    .cat__segment:nth-of-type(21):before { animation-delay: 0.40s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(22) { transform: translate(-50%, -50%) rotate(8deg);}
+    .cat__segment:nth-of-type(22):before { animation-delay: 0.42s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(23) { transform: translate(-50%, -50%) rotate(9.33deg);}
+    .cat__segment:nth-of-type(23):before { animation-delay: 0.44s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(24) { transform: translate(-50%, -50%) rotate(10.67deg);}
+    .cat__segment:nth-of-type(24):before { animation-delay: 0.46s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(25) { transform: translate(-50%, -50%) rotate(12deg);}
+    .cat__segment:nth-of-type(25):before { animation-delay: 0.48s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(26) { transform: translate(-50%, -50%) rotate(13.33deg);}
+    .cat__segment:nth-of-type(26):before { animation-delay: 0.50s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(27) { transform: translate(-50%, -50%) rotate(14.67deg);}
+    .cat__segment:nth-of-type(27):before { animation-delay: 0.52s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(28) { transform: translate(-50%, -50%) rotate(16deg);}
+    .cat__segment:nth-of-type(28):before { animation-delay: 0.54s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(29) { transform: translate(-50%, -50%) rotate(17.33deg);}
+    .cat__segment:nth-of-type(29):before { animation-delay: 0.56s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(30) { transform: translate(-50%, -50%) rotate(18.67deg);}
+    .cat__segment:nth-of-type(30):before { animation-delay: 0.58s; transform: translateX(6em);}
+
+    @keyframes loop {
+      from { transform: rotate(0) translateX(6em);}
+      to   { transform: rotate(-1turn) translateX(6em);}
+    }
+  </style>
+</head>
+<body>
+  <div class="cat">
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+  </div>
+  <div class="error-header">
+    <h1><a href="{{ url_for('dashboard') }}">404</a></h1>
+  </div>
+  <div class="error-footer">
+    <div class="error-message">
+      <p>¡Gato perdido!</p>
+      <p>Esta no es la pagina que buscas</p>
+    </div>
+  </div>
+</body>
+</html>
+
+===== templates\errors\500.html =====
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Longcat Spinner | @coding.stella</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <style>
+    * { border: 0; box-sizing: border-box; margin: 0; padding: 0; }
+
+    .error-header {
+      position: absolute;
+      top: 10%;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      z-index: 1;
+      width: 100%;
+      pointer-events: none;
+    }
+    .error-header h1 {
+      font-size: clamp(2em, 10vw, 5em);
+      color: #b0b0b0;
+      text-shadow: 0 0 10px #808080;
+    }
+
+    .error-footer {
+      position: absolute;
+      bottom: 10%;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      z-index: 1;
+      width: 100%;
+      pointer-events: none;
+    }
+    .error-footer p {
+      font-size: clamp(0.8em, 3vw, 1.2em);
+      margin-bottom: 0.5em;
+      color: #d1d1d1;
+    }
+
+    .error-message {
+      font-size: clamp(1em, 4vw, 1.5em);
+      color: #b0b0b0;
+      margin-bottom: 1em;
+    }
+
+    body {
+      background: #000;
+      font-size: clamp(14px, 2vw, 20px);
+      height: 100vh;
+      line-height: 1.5;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .cat {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(90vw, 16em);
+      height: min(90vw, 16em);
+      z-index: 2;
+    }
+    .cat__segment {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 3em;
+      height: 2em;
+      transform: translate(-50%, -50%);
+    }
+    .cat__segment:before {
+      animation: loop 2s cubic-bezier(0.6, 0, 0.4, 1) infinite running;
+      background: linear-gradient(90deg, #b0b0b0 20%, #d6d4d4 20% 80%, #b0b0b0 80%);
+      border-radius: 0.25em;
+      content: "";
+      display: block;
+      will-change: transform;
+      width: 100%;
+      height: 100%;
+    }
+    .cat__segment:first-of-type {
+      width: 4em;
+      height: 4em;
+      z-index: 1;
+    }
+    .cat__segment:first-of-type:before {
+      background:
+        radial-gradient(0.25em 0.25em at 1.25em 1.6em,#ffffff 48%,transparent 50%),
+        radial-gradient(0.75em 0.75em at 1.25em 1.75em,#606060 48%,transparent 50%),
+        radial-gradient(0.25em 0.25em at 2.75em 1.6em,#ffffff 48%,transparent 50%),
+        radial-gradient(0.75em 0.75em at 2.75em 1.75em,#606060 48%,transparent 50%),
+        radial-gradient(0.9em 0.8em at 1.5em 2.65em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(0.9em 0.8em at 2.5em 2.65em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(1em 0.8em at 1.6em 2.75em,#808080 48%,transparent 50%),
+        radial-gradient(1em 0.8em at 2.4em 2.75em,#808080 48%,transparent 50%),
+        radial-gradient(0.75em 0.75em at 50% 2.5em,#d0d0d0 48%,transparent 50%),
+        radial-gradient(4em 3em at 50% 2em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(4em 3em at 50% 2.2em,#8f8f8f 48%,transparent 50%),
+        radial-gradient(1em 3em at 0.75em 1.5em,#d0d0d0 39%,#b0b0b0 40% 49%,transparent 50%),
+        radial-gradient(1em 3em at 3.25em 1.5em,#d0d0d0 39%,#b0b0b0 40% 49%,transparent 50%),
+        radial-gradient(1em 2em at 0.5em 2.8em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(1em 2em at 0.5em 3em,#bcbaba 48%,transparent 50%),
+        radial-gradient(1em 2em at 3.5em 2.8em,#b0b0b0 48%,transparent 50%),
+        radial-gradient(1em 2em at 3.5em 3em,#bcbaba 48%,transparent 50%);
+      background-repeat: no-repeat;
+    }
+    .cat__segment:last-of-type {
+      width: 3em;
+      height: 4em;
+    }
+    .cat__segment:last-of-type:before {
+      background:
+        linear-gradient(90deg,#b0b0b0 20%,#bcbaba 20% 80%,#b0b0b0 80%) 0 1.5em/3em 0.5em,
+        radial-gradient(3em 2em at top center,#bcbaba 30%,#b0b0b0 31% 48%,transparent 50%) 0 2em/3em 2em,
+        radial-gradient(1em 4em at 0.5em 0,#b0b0b0 48%,transparent 50%) 0 2em/3em 2em,
+        radial-gradient(1em 4em at 2.5em 0,#b0b0b0 48%,transparent 50%) 0 2em/3em 2em;
+      background-repeat: no-repeat;
+    }
+
+    /* Regla común para rotación y delay */
+    /* Solo 30 líneas para los segmentos restantes, mucho menos repetidas que antes */
+    /* Si usas un preprocesador puedes reducir aún más */
+    .cat__segment:nth-of-type(1)  { transform: translate(-50%, -50%) rotate(-20deg);}
+    .cat__segment:nth-of-type(1):before  { animation-delay: 0s;    transform: translateX(6em);}
+    .cat__segment:nth-of-type(2)  { transform: translate(-50%, -50%) rotate(-18.67deg);}
+    .cat__segment:nth-of-type(2):before  { animation-delay: 0.02s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(3)  { transform: translate(-50%, -50%) rotate(-17.33deg);}
+    .cat__segment:nth-of-type(3):before  { animation-delay: 0.04s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(4)  { transform: translate(-50%, -50%) rotate(-16deg);}
+    .cat__segment:nth-of-type(4):before  { animation-delay: 0.06s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(5)  { transform: translate(-50%, -50%) rotate(-14.67deg);}
+    .cat__segment:nth-of-type(5):before  { animation-delay: 0.08s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(6)  { transform: translate(-50%, -50%) rotate(-13.33deg);}
+    .cat__segment:nth-of-type(6):before  { animation-delay: 0.10s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(7)  { transform: translate(-50%, -50%) rotate(-12deg);}
+    .cat__segment:nth-of-type(7):before  { animation-delay: 0.12s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(8)  { transform: translate(-50%, -50%) rotate(-10.67deg);}
+    .cat__segment:nth-of-type(8):before  { animation-delay: 0.14s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(9)  { transform: translate(-50%, -50%) rotate(-9.33deg);}
+    .cat__segment:nth-of-type(9):before  { animation-delay: 0.16s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(10) { transform: translate(-50%, -50%) rotate(-8deg);}
+    .cat__segment:nth-of-type(10):before { animation-delay: 0.18s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(11) { transform: translate(-50%, -50%) rotate(-6.67deg);}
+    .cat__segment:nth-of-type(11):before { animation-delay: 0.20s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(12) { transform: translate(-50%, -50%) rotate(-5.33deg);}
+    .cat__segment:nth-of-type(12):before { animation-delay: 0.22s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(13) { transform: translate(-50%, -50%) rotate(-4deg);}
+    .cat__segment:nth-of-type(13):before { animation-delay: 0.24s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(14) { transform: translate(-50%, -50%) rotate(-2.67deg);}
+    .cat__segment:nth-of-type(14):before { animation-delay: 0.26s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(15) { transform: translate(-50%, -50%) rotate(-1.33deg);}
+    .cat__segment:nth-of-type(15):before { animation-delay: 0.28s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(16) { transform: translate(-50%, -50%) rotate(0deg);}
+    .cat__segment:nth-of-type(16):before { animation-delay: 0.30s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(17) { transform: translate(-50%, -50%) rotate(1.33deg);}
+    .cat__segment:nth-of-type(17):before { animation-delay: 0.32s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(18) { transform: translate(-50%, -50%) rotate(2.67deg);}
+    .cat__segment:nth-of-type(18):before { animation-delay: 0.34s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(19) { transform: translate(-50%, -50%) rotate(4deg);}
+    .cat__segment:nth-of-type(19):before { animation-delay: 0.36s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(20) { transform: translate(-50%, -50%) rotate(5.33deg);}
+    .cat__segment:nth-of-type(20):before { animation-delay: 0.38s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(21) { transform: translate(-50%, -50%) rotate(6.67deg);}
+    .cat__segment:nth-of-type(21):before { animation-delay: 0.40s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(22) { transform: translate(-50%, -50%) rotate(8deg);}
+    .cat__segment:nth-of-type(22):before { animation-delay: 0.42s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(23) { transform: translate(-50%, -50%) rotate(9.33deg);}
+    .cat__segment:nth-of-type(23):before { animation-delay: 0.44s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(24) { transform: translate(-50%, -50%) rotate(10.67deg);}
+    .cat__segment:nth-of-type(24):before { animation-delay: 0.46s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(25) { transform: translate(-50%, -50%) rotate(12deg);}
+    .cat__segment:nth-of-type(25):before { animation-delay: 0.48s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(26) { transform: translate(-50%, -50%) rotate(13.33deg);}
+    .cat__segment:nth-of-type(26):before { animation-delay: 0.50s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(27) { transform: translate(-50%, -50%) rotate(14.67deg);}
+    .cat__segment:nth-of-type(27):before { animation-delay: 0.52s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(28) { transform: translate(-50%, -50%) rotate(16deg);}
+    .cat__segment:nth-of-type(28):before { animation-delay: 0.54s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(29) { transform: translate(-50%, -50%) rotate(17.33deg);}
+    .cat__segment:nth-of-type(29):before { animation-delay: 0.56s; transform: translateX(6em);}
+    .cat__segment:nth-of-type(30) { transform: translate(-50%, -50%) rotate(18.67deg);}
+    .cat__segment:nth-of-type(30):before { animation-delay: 0.58s; transform: translateX(6em);}
+
+    @keyframes loop {
+      from { transform: rotate(0) translateX(6em);}
+      to   { transform: rotate(-1turn) translateX(6em);}
+    }
+  </style>
+</head>
+<body>
+  <div class="cat">
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+    <div class="cat__segment"></div>
+  </div>
+  <div class="error-header">
+    <h1>500</h1>
+  </div>
+  <div class="error-footer">
+    <div class="error-message">
+      <p>¡Gato no pudo completar solicitud!</p>
+      <p>El servidor no pudo manejar la solicitud</p>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel de Administración</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap');
+
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: url('{{ url_for('static', filename='images/hoober.jpg') }}') no-repeat center center/cover;
+      color: #eee;
+      min-height: 100vh;
+      margin: 0;
+      padding: 1rem;
+    }
+
+    @media (min-width: 640px) {
+      body {
+        padding: 2rem 1rem;
+      }
+    }
+
+    h1 {
+      color: #f0f0f0;
+      font-weight: 600;
+      font-size: 2.25rem;
+      text-align: center;
+      margin-bottom: 2rem;
+      text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+    }
+
+    section {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 1rem;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    @media (min-width: 640px) {
+      section {
+        padding: 2rem;
+        margin-bottom: 2rem;
+      }
+    }
+    section:hover, section:focus-within {
+      transform: translateY(-5px);
+      box-shadow: 0 15px 30px rgba(255, 255, 255, 0.2);
+    }
+
+    section h2 {
+      color: #f9f9f9;
+      font-weight: 600;
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+      border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+      padding-bottom: 0.5rem;
+    }
+
+    section h3 {
+      margin-top: 1.5rem;
+      color: #ddd;
+      font-weight: 500;
+      font-size: 1.25rem;
+    }
+
+    .table-responsive {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: rgba(0,0,0,0.25);
+      border-radius: 0.75rem;
+      overflow: hidden;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.7);
+      margin-top: 1rem;
+    }
+
+    th, td {
+      padding: 1rem 1.25rem;
+      text-align: left;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      color: #eee;
+      vertical-align: middle;
+    }
+
+    td.flex {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+    }
+
+    th {
+      background: rgba(255,255,255,0.1);
+      font-weight: 600;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    input:not([type="checkbox"]):not([type="file"]), select {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      background: rgba(0, 0, 0, 0.4);
+      color: #eee;
+      font-weight: 400;
+      font-size: 1.05rem;
+      outline: none;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+      height: 40px;
+      box-sizing: border-box;
+    }
+
+    input::placeholder {
+      color: #bbb;
+      font-weight: 300;
+    }
+
+    input:focus, select:focus {
+      border-color: rgba(255,255,255,0.8);
+      box-shadow: 0 0 8px rgba(255,255,255,0.5);
+      background: rgba(0, 0, 0, 0.6);
+    }
+
+    button {
+      padding: 0 2.5rem;
+      border-radius: 0.75rem;
+      font-weight: 600;
+      font-size: 1.25rem;
+      background: linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.15) 100%);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.25);
+      user-select: none;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+      letter-spacing: 0.5px;
+      min-width: 110px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      vertical-align: middle;
+    }
+
+    button:hover, button:focus {
+      background: linear-gradient(135deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.25) 100%);
+      box-shadow: 0 8px 16px rgba(255,255,255,0.25), 0 6px 12px rgba(0,0,0,0.4);
+      transform: translateY(-4px);
+      outline: none;
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.6);
+    }
+
+    button:active {
+      transform: translateY(2px);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.1) 100%);
+    }
+
+    .file-btn.file-selected {
+      background: linear-gradient(135deg, rgba(110, 231, 183, 0.5) 0%, rgba(52, 211, 153, 0.4) 100%);
+      border-color: rgba(110, 231, 183, 0.8);
+    }
+
+    .inline-form {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .inline-form > * {
+      width: 100%;
+    }
+    .inline-form button {
+      width: 100%;
+    }
+
+    @media (min-width: 840px) {
+      .inline-form {
+        flex-direction: row;
+        gap: 1rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .inline-form > * {
+        flex: 1;
+        min-width: 150px;
+      }
+      .inline-form button {
+        flex: 0 0 auto;
+        min-width: auto;
+        align-self: center;
+        width: auto;
+      }
+    }
+
+    .checkbox-group label {
+      display: inline-flex;
+      align-items: center;
+      margin-right: 1.25rem;
+      cursor: pointer;
+      user-select: none;
+      color: #ddd;
+      font-weight: 400;
+      font-size: 0.9rem;
+    }
+    .checkbox-group input[type="checkbox"] {
+      margin-right: 0.4rem;
+      accent-color: #6ee7b7; /* Tailwind emerald-300 for modern feel */
+      cursor: pointer;
+    }
+
+    fieldset {
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 0.75rem;
+      padding: 1rem 1.25rem;
+      margin: 1rem 0 1.5rem 0;
+      background: rgba(0,0,0,0.2);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      color: #ddd;
+    }
+    legend {
+      padding: 0 0.75rem;
+      font-weight: 600;
+      color: #a3a3a3;
+    }
+
+    /* Responsive tables */
+    @media (max-width: 767px) {
+      table {
+        display: block;
+      }
+      thead {
+        display: none;
+      }
+      tr {
+        display: block;
+        margin-bottom: 1rem;
+        padding: 1rem;
+        background: rgba(0,0,0,0.3);
+        border-radius: 0.5rem;
+      }
+      td {
+        display: flex;
+        flex-direction: column;
+        padding: 0.5rem 0;
+        border-bottom: none;
+      }
+      td:before {
+        content: attr(data-label);
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+        color: #ccc;
+      }
+      td.flex {
+        flex-direction: row;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+    }
+  </style>
+</head>
+<body class="max-w-7xl mx-auto">
+
+  <h1>Panel de Administración</h1>
+
+  <!-- Sección Usuarios -->
+  <section tabindex="0">
+    <h2>Usuarios</h2>
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr><th>Usuario</th><th>Grupos</th><th>Cambiar Contraseña</th><th>Acciones</th></tr>
+        </thead>
+        <tbody>
+        {% for usuario in usuarios %}
+          <tr>
+            <form method="POST" action="{{ url_for('admin.editar_usuario', usuario_id=usuario.id) }}">
+              <td class="pr-4" data-label="Usuario">{{ usuario.username }}</td>
+              <td data-label="Grupos">
+                <div class="checkbox-group max-w-xs overflow-auto max-h-36">
+                {% for grupo in grupos %}
+                  <label>
+                    <input type="checkbox" name="grupo_ids" value="{{ grupo.id }}"
+                           {% if grupo in usuario.grupos %}checked{% endif %}>
+                    {{ grupo.nombre }}
+                  </label>
+                {% endfor %}
+                </div>
+              </td>
+              <td data-label="Cambiar Contraseña">
+                <input type="password" name="password" placeholder="Nueva contraseña" autocomplete="new-password" />
+              </td>
+              <td class="flex gap-2 flex-wrap items-center justify-center" data-label="Acciones">
+                <button type="submit">Guardar</button>
+                {% if usuario.username != 'admin' %}
+                <button formaction="{{ url_for('admin.eliminar_usuario', usuario_id=usuario.id) }}" formmethod="POST" onclick="return confirm('¿Eliminar usuario?');" type="submit">
+                  Eliminar
+                </button>
+                {% endif %}
+              </td>
+            </form>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Crear Usuario Nuevo</h3>
+    <form method="POST" action="{{ url_for('admin.crear_usuario') }}" class="max-w-lg inline-form">
+      <input name="username" placeholder="Usuario" required autocomplete="username" />
+      <input type="password" name="password" placeholder="Contraseña" required autocomplete="new-password" />
+      <div class="checkbox-group max-w-xs overflow-auto max-h-36">
+        {% for grupo in grupos %}
+          <label><input type="checkbox" name="grupo_ids" value="{{ grupo.id }}"> {{ grupo.nombre }}</label>
+        {% endfor %}
+      </div>
+      <button type="submit">Crear Usuario</button>
+    </form>
+  </section>
+
+  <!-- Sección Grupos -->
+  <section tabindex="0">
+    <h2>Grupos</h2>
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr><th>Nombre</th><th>Usuarios</th><th>Tarjetas</th><th>Acciones</th></tr>
+        </thead>
+        <tbody>
+        {% for grupo in grupos %}
+          <tr>
+            <form method="POST" action="{{ url_for('admin.editar_grupo', grupo_id=grupo.id) }}">
+              <td data-label="Nombre">
+                <input name="nombre" value="{{ grupo.nombre }}" required />
+              </td>
+              <td data-label="Usuarios">
+                <div class="checkbox-group max-w-xs overflow-auto max-h-36">
+                  {% for usuario in usuarios %}
+                    <label><input type="checkbox" name="usuario_ids" value="{{ usuario.id }}"
+                      {% if usuario in grupo.usuarios %}checked{% endif %}> {{ usuario.username }}</label>
+                  {% endfor %}
+                </div>
+              </td>
+              <td data-label="Tarjetas">
+                <div class="checkbox-group max-w-xs overflow-auto max-h-36">
+                  {% for tarjeta in tarjetas %}
+                    <label><input type="checkbox" name="tarjeta_ids" value="{{ tarjeta.id }}"
+                      {% if tarjeta in grupo.tarjetas %}checked{% endif %}> {{ tarjeta.nombre }}</label>
+                  {% endfor %}
+                </div>
+              </td>
+              <td class="flex gap-2 flex-wrap items-center justify-center" data-label="Acciones">
+                <button type="submit">Guardar</button>
+                <button formaction="{{ url_for('admin.eliminar_grupo', grupo_id=grupo.id) }}" formmethod="POST" onclick="return confirm('¿Eliminar grupo?');" type="submit">
+                  Eliminar
+                </button>
+              </td>
+            </form>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Crear Grupo Nuevo</h3>
+    <form method="POST" action="{{ url_for('admin.crear_grupo') }}" class="max-w-lg inline-form">
+      <input name="nombre" placeholder="Nombre grupo" required />
+      <div class="checkbox-group max-w-xs overflow-auto max-h-36">
+        {% for tarjeta in tarjetas %}
+          <label><input type="checkbox" name="tarjeta_ids" value="{{ tarjeta.id }}"> {{ tarjeta.nombre }}</label>
+        {% endfor %}
+      </div>
+      <button type="submit">Crear Grupo</button>
+    </form>
+  </section>
+
+  <!-- Sección Tarjetas -->
+  <section tabindex="0">
+    <h2>Tarjetas</h2>
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Imagen URL</th>
+            <th>Archivo HTML</th>
+            <th>Grupos</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for tarjeta in tarjetas %}
+          <tr>
+            <form method="POST" action="{{ url_for('admin.editar_tarjeta', tarjeta_id=tarjeta.id) }}">
+              <td data-label="Nombre">
+                <input name="nombre" value="{{ tarjeta.nombre }}" required />
+              </td>
+              <td data-label="Imagen URL">
+                <input name="imagen_url" value="{{ tarjeta.imagen_url }}" required />
+              </td>
+              <td data-label="Archivo HTML">
+                <input name="archivo_html" value="{{ tarjeta.archivo_html }}" required />
+              </td>
+              <td data-label="Grupos">
+                <div class="checkbox-group max-w-xs overflow-auto max-h-36">
+                  {% for grupo in grupos %}
+                    <label>
+                      <input type="checkbox" name="grupo_ids" value="{{ grupo.id }}"
+                        {% if grupo in tarjeta.grupos %}checked{% endif %}>
+                      {{ grupo.nombre }}
+                    </label>
+                  {% endfor %}
+                </div>
+              </td>
+              <td class="flex gap-2 flex-wrap items-center justify-center" data-label="Acciones">
+                <button type="submit">Guardar</button>
+                <button formaction="{{ url_for('admin.eliminar_tarjeta', tarjeta_id=tarjeta.id) }}" formmethod="POST" onclick="return confirm('¿Eliminar tarjeta?');" type="submit">
+                  Eliminar
+                </button>
+              </td>
+            </form>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section tabindex="0">
+  <h3>Crear Tarjeta Nueva</h3>
+  <form method="POST" enctype="multipart/form-data" action="{{ url_for('admin.crear_tarjeta') }}" class="max-w-lg inline-form" id="crearTarjetaForm">
+    <input type="text" name="nombre" placeholder="Nombre tarjeta (igual a carpeta)" id="nombreTarjeta" required />
+    <!-- Imagen -->
+    <input type="file" id="imagen" name="imagen" accept="image/*" class="submit" required hidden>
+    <button type="button" class="file-btn" onclick="document.getElementById('imagen').click()">Abrir imagen</button>
+
+    <!-- Archivo HTML -->
+    <input type="file" id="archivo_html" name="archivo_html" accept=".html" class="submit" required hidden>
+    <button type="button" class="file-btn" onclick="document.getElementById('archivo_html').click()">Abrir archivo HTML</button>
+
+    <!-- Video -->
+    <input type="file" id="video" name="video" accept="video/*" class="submit" hidden>
+    <button type="button" class="file-btn" onclick="document.getElementById('video').click()">Abrir video</button>
+    <fieldset>
+      <legend>Grupos asignados</legend>
+      {% for grupo in grupos %}
+        <label><input type="checkbox" name="grupo_ids" value="{{ grupo.id }}"> {{ grupo.nombre }}</label><br>
+      {% endfor %}
+    </fieldset>
+    <button type="submit">Crear Tarjeta</button>
+  </form>
+  </section>
+
+  <script>
+    // Handle file selection changes
+    document.querySelectorAll('input[type="file"]').forEach(input => {
+      input.addEventListener('change', function() {
+        const button = this.nextElementSibling;
+        if(this.files.length > 0) {
+          button.classList.add('file-selected');
+        } else {
+          button.classList.remove('file-selected');
+        }
+      });
+    });
+
+    // Evitar usar "admin" como nombre de carpeta para tarjetas - validación frontend.
+    document.getElementById('crearTarjetaForm').addEventListener('submit', function(e) {
+      const nombre = document.getElementById('nombreTarjeta').value.trim().toLowerCase();
+      if(nombre === 'admin') {
+        alert("No puedes usar 'admin' como nombre de carpeta para tarjetas.");
+        e.preventDefault();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snoopy</title>
+    <style>
+        body {
+            background: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .video-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        @media (max-width: 600px) {
+            .video-container {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="video-container">
+        <video autoplay muted>
+          <source src="{{ url_for('static', filename='videos/Snoopy.mp4') }}" type="video/mp4">
+        </video>
+
+    </div>
+
+</body>
+</html>
