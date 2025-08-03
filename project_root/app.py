@@ -38,10 +38,11 @@ def get_all_tarjeta_carpetas():
     return [f for f in os.listdir(base_blueprints)
             if os.path.isdir(os.path.join(base_blueprints, f))]
 
+base_path = os.path.abspath(os.path.dirname(__file__))
 app.jinja_loader = ChoiceLoader([
     app.jinja_loader,
     FileSystemLoader([
-        os.path.join('blueprints', carpeta, 'templates') for carpeta in get_all_tarjeta_carpetas()
+        os.path.join(base_path, 'blueprints', carpeta, 'templates') for carpeta in get_all_tarjeta_carpetas()
     ])
 ])
 
@@ -115,7 +116,6 @@ def mostrar_tarjeta_generica(carpeta, archivo_html):
     except Exception as e:
         app.logger.error(f'Error renderizando {archivo_html} en carpeta {carpeta}: {e}')
         abort(404)
-
 
 # 🚀 Ejecutar la aplicación
 if __name__ == '__main__':
