@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <title>Flor paramétrica 3D</title>
   <style>
     body {
@@ -13,12 +13,15 @@
     }
     canvas {
       display: block;
-      width: 100%;
-      height: 100%;
+      width: 100vw;
+      height: 100vh;
+      position: fixed;
+      top: 0;
+      left: 0;
     }
   </style>
 </head>
-<body>
+<body ontouchstart="" oncontextmenu="return false;">
 <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
 <script>
   const n = 900;
@@ -60,7 +63,7 @@
   // Crear la escena y cámara
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(15, window.innerWidth / window.innerHeight, 0.1, 100);
-  camera.position.set(0, 0, 10);
+  camera.position.z = window.innerWidth > 768 ? 10 : 15;
   camera.lookAt(scene.position);
 
   // Renderer
@@ -148,12 +151,36 @@
   }
   animate();
 
-  // Redimensionar ventana
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
+  // Handle window resize and device orientation changes
+  function handleResize() {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    camera.aspect = width / height;
+    camera.position.z = width > 768 ? 10 : 15;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+    renderer.setSize(width, height);
+  }
+
+  // Touch interaction for mobile
+  let touchStartX = 0;
+  document.addEventListener('touchstart', (e) => {
+    touchStartX = e.touches[0].clientX;
+  }, false);
+
+  document.addEventListener('touchmove', (e) => {
+    if (!touchStartX) return;
+    const touchX = e.touches[0].clientX;
+    const diff = touchX - touchStartX;
+    mesh.rotation.z += diff * 0.01;
+    touchStartX = touchX;
+  }, false);
+
+  window.addEventListener('resize', handleResize);
+  window.addEventListener('orientationchange', handleResize);
+
+  // Initial setup
+  handleResize();
 </script>
 </body>
 </html>
