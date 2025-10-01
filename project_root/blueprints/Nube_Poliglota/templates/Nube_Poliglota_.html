@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <title>Nube Poliglota </title>
+    <style>
+
+:root {
+    --tagcloud-transition-user-duration: 1250ms;
+    --tagcloud-transition-user-ease: ease-in-out;
+    --tagcloud-transition-duration: 250ms;
+    --tagcloud-transition-ease: ease-out;
+    --tagcloud-bg-color-rgb: 0, 0, 0;
+    --tagcloud-animation-duration: 25s;
+    --tagcloud-animation-direction: normal;
+    --tagcloud-animation-play-state: running;
+    --tagcloud-diameter: 32rem;
+    --tagcloud-start-rotation: 54;
+    --tagcloud-controls-diameter: 256rem;
+    --tagcloud-control-bg-color: transparent;
+    --tagcloud-control-bg-hover-color: transparent;
+    --tagcloud-control-bg-checked-color: transparent;
+    --tag-diameter: 5.5rem;
+    --tag-font-color-rgb: 255, 255, 255;
+    --tag-font-family: 'Open Sans', sans-serif;
+    --tag-font-size: 0.6rem;
+}
+
+/*
+global
+*/
+@import url(//fonts.googleapis.com/css?family=Open+Sans);
+
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    box-sizing: border-box;
+}
+
+*:focus {
+    outline: none;
+}
+
+body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    background-color: rgb(var(--tagcloud-bg-color-rgb));
+    overflow: hidden;
+}
+
+/*
+tagcloud
+*/
+.tagcloud-wrapper {
+    --_control-diamater: var(--tagcloud-controls-diameter);
+    --_control-radius: calc(var(--_control-diamater) / 2);
+    --_diameter: var(--tagcloud-diameter);
+    --_radius: calc(calc(var(--_diameter) / 2) - calc(var(--tag-diameter) / 2));
+    width: var(--control-diameter);
+    aspect-ratio: 1 / 1;
+    font-family: var(--tag-font-family);
+    font-size: var(--tag-font-size);
+}
+
+@media only screen and (max-width: 48rem) {
+    .tagcloud-wrapper {
+        --_control-diamater: calc(var(--tagcloud-controls-diameter) * 0.5);
+        --_diameter: calc(var(--tagcloud-diameter) * 0.88);
+    }
+}
+@media only screen and (max-width: 32rem) {
+    .tagcloud-wrapper {
+        --_diameter: calc(var(--tagcloud-diameter) * 0.75);
+    }
+}
+
+.tagcloud-wrapper:has(.tagcloud-rotation:hover)  {
+    --tagcloud-animation-play-state: paused;
+}
+
+.tagcloud-wrapper .tagcloud-tags {
+    position: absolute;
+    width: var(--_diameter);
+    aspect-ratio: 1 / 1;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    list-style-type: none;
+    position: relative;
+    transform-style: inherit;
+    animation: tagcloud-rotation var(--tagcloud-animation-duration) var(--tagcloud-animation-direction) linear infinite var(--tagcloud-animation-play-state);
+}
+
+@keyframes tagcloud-rotation {
+    from {transform: translate(-50%, -50%) rotateX(0deg);}
+    to {transform: translate(-50%, -50%) rotateX(360deg);}
+}
+
+.tagcloud-wrapper .tagcloud-tags:has(.tagcloud-tag div span:hover) .tagcloud-tag:not(:has(div span:hover)) {
+    opacity: 0.25;
+}
+
+.tagcloud-wrapper .tagcloud-tag {
+    --_phi: acos(calc(-1 + (2 * var(--index)) / var(--num-elements)));
+    --_theta: calc(sqrt(calc(var(--num-elements) * 3.141592653589793)) * var(--_phi));
+    --_x: calc(cos(var(--_theta)) * sin(var(--_phi)));
+    --_y: calc(sin(var(--_theta)) * sin(var(--_phi)));
+    --_z: calc(cos(var(--_phi)));
+    --_vector-length: sqrt(var(--_x) * var(--_x) + var(--_y) * var(--_y) + var(--_z) * var(--_z));
+    --_normalized-x: calc(var(--_x) / var(--_vector-length));
+    --_normalized-y: calc(var(--_y) / var(--_vector-length));
+    --_normalized-z: calc(var(--_z) / var(--_vector-length));
+    --_scaled-x: calc(var(--_normalized-x) * var(--_radius));
+    --_scaled-y: calc(var(--_normalized-y) * var(--_radius));
+    --_scaled-z: calc(var(--_normalized-z) * var(--_radius));
+    --_final-x: calc(var(--_scaled-x) + var(--_radius));
+    --_final-y: calc(var(--_scaled-y) + var(--_radius));
+    --_final-z: var(--_scaled-z);
+    pointer-events: none;
+    width: var(--tag-diameter);
+    height: var(--tag-diameter); 
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    transition: opacity var(--tagcloud-transition-duration) var(--tagcloud-transition-ease);
+    transform: translate3d(var(--_final-x), var(--_final-y), var(--_final-z));
+    animation: tagcloud-tag-rotation var(--tagcloud-animation-duration) var(--tagcloud-animation-direction) linear infinite var(--tagcloud-animation-play-state);
+}
+
+@keyframes tagcloud-tag-rotation {
+    from {transform: translate3d(var(--_final-x), var(--_final-y), var(--_final-z)) rotateX(360deg);}
+    to {transform: translate3d(var(--_final-x), var(--_final-y), var(--_final-z)) rotateX(0deg);}
+}
+
+.tagcloud-wrapper .tagcloud-tag div {
+    transform: rotateZ(calc(var(--_current-rotation) * -1deg));
+    transition: transform var(--tagcloud-transition-user-duration) var(--tagcloud-transition-user-ease);
+}
+
+.tagcloud-wrapper .tagcloud-tag div span {
+    pointer-events: initial;
+    color: rgb(var(--tag-font-color-rgb));
+    text-decoration: none;
+    text-shadow: 1px  1px 1px rgb(var(--tagcloud-bg-color-rgb)),
+                    1px -1px 1px rgb(var(--tagcloud-bg-color-rgb)),
+                    -1px  1px 1px rgb(var(--tagcloud-bg-color-rgb)),
+                    -1px -1px 1px rgb(var(--tagcloud-bg-color-rgb)), 
+                    0 0 1rem rgb(var(--tagcloud-bg-color-rgb));
+}
+
+.tagcloud-wrapper .tagcloud-controls {
+    width: var(--_control-diamater);
+    aspect-ratio: 1 / 1;
+    position: relative;
+    --_current-rotation: var(--tagcloud-start-rotation);
+    transform-style: inherit;
+}
+
+.tagcloud-wrapper .tagcloud-controls .tagcloud-control-button {
+    --_width: var(--_control-radius);
+    --_height: calc(var(--_control-diamater) * 3.141592653589793 / var(--num-elements) + 1px);
+    --_theta-start: 0;
+    --_theta-length: calc(2 * 3.141592653589793);
+    --_segment: calc(var(--_theta-start) + var(--index) / var(--num-elements) * var(--_theta-length));
+    --_x: calc(var(--_control-radius) * cos(var(--_segment)));
+    --_y: calc(var(--_control-radius) * sin(var(--_segment)) + var(--_control-radius) - var(--_height) / 2);
+    --_rotation: calc(var(--index) / var(--num-elements) * 360deg);
+    position: absolute;
+    left: var(--_x);
+    top: var(--_y);
+    width: var(--_width);
+    height: var(--_height);
+    clip-path: polygon(0% 50%, 100% 0%, 100% 100%);
+    transform-origin: right center;
+    transform: rotate(var(--_rotation));
+    transition: background-color var(--tagcloud-transition-duration) var(--tagcloud-transition-ease);
+    background-color: var(--tagcloud-control-bg-color);
+}
+
+.tagcloud-wrapper .tagcloud-controls .tagcloud-control-button input {
+    -webkit-appearance: none;
+    appearance: none;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.tagcloud-wrapper .tagcloud-controls .tagcloud-control-button:has(input:checked) {
+    background-color: var(--tagcloud-control-bg-checked-color);
+}
+.tagcloud-wrapper .tagcloud-controls .tagcloud-control-button:has(input:hover) {
+    background-color: var(--tagcloud-control-bg-hover-color);
+}
+
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(1) input:checked) {
+    --_current-rotation: 108;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(2) input:checked) {
+    --_current-rotation: 126;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(3) input:checked) {
+    --_current-rotation: 144;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(4) input:checked) {
+    --_current-rotation: 162;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(5) input:checked) {
+    --_current-rotation: 180;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(6) input:checked) {
+    --_current-rotation: 198;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(7) input:checked) {
+    --_current-rotation: 216;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(8) input:checked) {
+    --_current-rotation: 234;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(9) input:checked) {
+    --_current-rotation: 252;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(10) input:checked) {
+    --_current-rotation: 270;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(11) input:checked) {
+    --_current-rotation: 288;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(12) input:checked) {
+    --_current-rotation: 306;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(13) input:checked) {
+    --_current-rotation: 324;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(14) input:checked) {
+    --_current-rotation: 342;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(15) input:checked) {
+    --_current-rotation: 0;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(16) input:checked) {
+    --_current-rotation: 18;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(17) input:checked) {
+    --_current-rotation: 36;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(18) input:checked) {
+    --_current-rotation: 54;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(19) input:checked) {
+    --_current-rotation: 72;
+}
+.tagcloud-wrapper .tagcloud-controls:has(.tagcloud-control-button:nth-child(20) input:checked) {
+    --_current-rotation: 90;
+}
+
+.tagcloud-wrapper .tagcloud-controls .tagcloud-control-button:has(input:checked) ~ .tagcloud-rotation {
+    transform: translate(-50%, -50%) rotate(calc(var(--_current-rotation) * 1deg));
+}
+
+.tagcloud-wrapper .tagcloud-controls .tagcloud-control-button:has(input:checked) ~ .tagcloud-rotation .tagcloud-tags .tagcloud-tag div {
+    transform: rotateZ(calc(var(--_current-rotation) * -1deg));
+}
+
+.tagcloud-wrapper .tagcloud-controls .tagcloud-rotation {
+    position: absolute;
+    width: var(--_diameter);
+    aspect-ratio: 1 / 1;
+    perspective: calc(var(--_diameter) * 2);
+    transform-style: preserve-3d;
+    left: 50%;
+    top: 50%;
+    background: radial-gradient(rgba(var(--tagcloud-bg-color-rgb), 0.75) 15% , rgba(var(--tagcloud-bg-color-rgb), 0) calc(75% - var(--tag-diameter)));
+    border-radius: 50%;
+    transform: translate(-50%, -50%) rotate(calc(var(--_current-rotation) * 1deg));
+    transition: transform var(--tagcloud-transition-user-duration) var(--tagcloud-transition-user-ease);
+}
+    </style>
+</head>
+<body>
+    <div class="tagcloud-wrapper">
+
+		<div class="tagcloud-controls" style="--num-elements: 20">
+
+				<div class="tagcloud-control-button" style="--index: 1"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 2"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 3"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 4"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 5"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 6"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 7"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 8"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 9"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 10"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 11"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 12"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 13"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 14"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 15"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 16"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 17"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 18"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 19"><input type="radio" name="tagcloud-control-input"></div>
+				<div class="tagcloud-control-button" style="--index: 20"><input type="radio" name="tagcloud-control-input"></div>
+
+                <div class="tagcloud-rotation">
+                    <ul class="tagcloud-tags" style="--num-elements: 93">
+                        <li class="tagcloud-tag" style="--index: 1"><div><span>Te amo</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 2"><div><span>I love you</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 3"><div><span>Je t'aime</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 4"><div><span>Ich liebe dich</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 5"><div><span>Ti amo</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 6"><div><span>Eu te amo</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 7"><div><span>Я тебя люблю</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 8"><div><span>愛してる</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 9"><div><span>我爱你</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 10"><div><span>사랑해</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 11"><div><span>أحبك</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 12"><div><span>मैं तुमसे प्यार करता हूँ</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 13"><div><span>আমি তোমাকে ভালবাসি</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 14"><div><span>אני אוהב אותך</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 15"><div><span>Σ'αγαπώ</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 16"><div><span>Seni seviyorum</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 17"><div><span>Anh yêu em</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 18"><div><span>Kocham cię</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 19"><div><span>Ik hou van jou</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 20"><div><span>Jag älskar dig</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 21"><div><span>Minä rakastan sinua</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 22"><div><span>Jeg elsker deg</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 23"><div><span>Jeg elsker dig</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 24"><div><span>Szeretlek</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 25"><div><span>Miluji tě</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 26"><div><span>Ľúbim ťa</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 27"><div><span>Te iubesc</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 28"><div><span>Ég elska þig</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 29"><div><span>ฉันรักคุณ</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 30"><div><span>Aku cinta kamu</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 31"><div><span>Saya cinta padamu</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 32"><div><span>Mahal kita</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 33"><div><span>Обичам те</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 34"><div><span>Волим те</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 35"><div><span>Volim te</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 36"><div><span>Ljubim te</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 37"><div><span>Të dua</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 38"><div><span>Я тебе кохаю</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 39"><div><span>Aš tave myliu</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 40"><div><span>Es tevi mīlu</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 41"><div><span>Ma armastan sind</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 42"><div><span>Inħobbok</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 43"><div><span>მიყვარხარ</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 44"><div><span>دوستت دارم</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 45"><div><span>مجھے تم سے پیار ہے</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 46"><div><span>म तिमीलाई माया गर्छु</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 47"><div><span>मी तुझ्यावर प्रेम करतो</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 48"><div><span>હું તને પ્રેમ કરું છું</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 49"><div><span>నేను నిన్ను ప్రేమిస్తున్నాను</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 50"><div><span>நான் உன்னை காதலிக்கிறேன்</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 51"><div><span>ನಾನು ನಿನ್ನ ಪ್ರೀತಿಸುತ್ತೇನೆ</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 52"><div><span>ഞാന് നിന്നെ സ്നേഹിക്കുന്നു</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 53"><div><span>Ou te alofa ia te oe</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 54"><div><span>Au domoni iko</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 55"><div><span>'Oku ou 'ofa kiate koe</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 56"><div><span>Aroha ahau ki a koe</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 57"><div><span>Aku tresna karo kowe</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 58"><div><span>Abdi bogoh ka anjeun</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 59"><div><span>ខ្ញុំស្រលាញ់អ្នក</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 60"><div><span>ຂ້ອຍຮັກເຈົ້າ</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 61"><div><span>ကျွန်တော် မင်းကိုချစ်တယ်</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 62"><div><span>Би чамд хайртай</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 63"><div><span>Men seni sevaman</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 64"><div><span>Мен сені сүйемін</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 65"><div><span>Mən səni sevirəm</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 66"><div><span>Суна хьо веза</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 67"><div><span>Ez ji te hez dikim</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 68"><div><span>Maite zaitut</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 69"><div><span>T'estimo</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 70"><div><span>Quérote</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 71"><div><span>Ek het jou lief</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 72"><div><span>Ngiyakuthanda</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 73"><div><span>Nakupenda</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 74"><div><span>Ina son ka/ki</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 75"><div><span>Mo nifẹ rẹ</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 76"><div><span>Waan ku jeclahay</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 77"><div><span>እኔ እወድሻለሁ</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 78"><div><span>Ndiyakuthanda</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 79"><div><span>Gihigugma ko ikaw</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 80"><div><span>Aloha wau iā 'oe</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 81"><div><span>Të dua</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 82"><div><span>Is breá liom tú</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 83"><div><span>Dw i'n dy garu di</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 84"><div><span>Volim te</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 85"><div><span>Те сакам</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 86"><div><span>Мен сени сүйөм</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 87"><div><span>আমি তোমাকে ভালবাসি</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 88"><div><span>त्वयि स्निह्यामि</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 89"><div><span>Te amo</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 90"><div><span>Mi amas vin</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 91"><div><span>Mi lavim yu</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 92"><div><span>Munayki</span></div></li>
+                        <li class="tagcloud-tag" style="--index: 93"><div><span>Ałtýdę́ę́' ayóó'ánóshní</span></div></li>
+                        </ul>
+                </div>
+
+		</div>
+
+</div>
+</body>
+</html>
