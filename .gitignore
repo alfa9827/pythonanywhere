@@ -1,0 +1,46 @@
+# ==============================
+# Archivos y carpetas a ignorar
+# ==============================
+
+# Entorno virtual
+myenv/
+venv/
+.env/
+
+# Archivos de caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos temporales o de configuración local
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Archivos de base de datos y almacenamiento local
+*.db
+*.sqlite3
+instance/
+
+# Archivos específicos del proyecto
+project_root/app.py
+project_root/database.db
+
+# Archivos de compilación y dependencias
+build/
+dist/
+*.egg-info/
+
+# Archivos de configuración del sistema o editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Archivos del servidor o temporales de despliegue
+*.pid
+*.seed
+*.out
+*.pid.lock
+
