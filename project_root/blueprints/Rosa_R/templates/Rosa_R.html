@@ -1,0 +1,475 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Rosa_R</title>
+<style>
+
+    :root {
+        /* Define el factor de escala base para el diseño, 1vw equivale al 1% del ancho del viewport. */
+        --factor-escala-diseno: 0.04vw; 
+        /* Colores estandarizados en español */
+        --color-fondo-cuerpo: #080f1a;
+        --color-fondo-vaso: #122139;
+        --color-borde-vaso: #122139;
+        --color-base-vaso: rgba(255, 255, 255, 0.145);
+        --color-brillo: rgba(24, 23, 23, 0.242);
+        --color-petalo-1: #ff80aa;
+        --color-petalo-2-4-6: #ff6699;
+        --color-petalo-3-5-7: #ff4d88;
+        --color-petalo-6-7-destacado: #ff66b2;
+        --color-sombra-petalo: rgba(245,177,220,0.5);
+        --color-base-hoja: #338f37;
+        --color-tallo: #054c05;
+        --color-sombra-hoja: #066406;
+        --color-espinas: #054c05;
+    }
+
+    body {
+        /* Eliminar width: 100% y height: 100% y dejar que el viewport se encargue */
+        height: 100vh; /* Opcional, asegura que el cuerpo ocupe toda la altura visible */
+        width: 100vw; /* Opcional, asegura que el cuerpo ocupe todo el ancho visible */
+        background: var(--color-fondo-cuerpo);
+        overflow: hidden;
+        margin: 0; /* Asegura que no haya márgenes por defecto */
+        padding: 0; /* Asegura que no haya padding por defecto */
+    }
+
+    /*
+     * El contenedor se convierte en el punto de escala.
+     * Se mantiene la posición central, pero las dimensiones internas usarán la nueva escala.
+     */
+    .container {
+        position: absolute;
+        left: 50%;
+        top: 50%; /* Centrado vertical más bajo para dejar espacio para la base del vaso */
+        transform: translate(-50%, -50%);
+        /* Establecer una dimensión base para que los elementos dentro escalen bien */
+        width: 100%; 
+        height: 100%;
+    }
+
+    /*
+     * Se usa la función calc() para basar todas las dimensiones en la unidad --factor-escala-diseno.
+     * El tamaño original del vaso era 600px x 800px.
+     * Nuevo tamaño: 600 * 0.1vw = 60vw, 800 * 0.1vw = 80vw.
+     * Esto se ajustará al ancho del viewport.
+     */
+    .glass {
+        height: calc(800 * var(--factor-escala-diseno));
+        width: calc(600 * var(--factor-escala-diseno));
+        background: var(--color-fondo-vaso);
+        border-radius: calc(300 * var(--factor-escala-diseno)) calc(300 * var(--factor-escala-diseno)) 0px 0px;
+        position: relative; /* Cambiado a relative para que los pseudo-elementos se posicionen con respecto a él */
+        left: 50%; /* Centra el vaso dentro de .container */
+        transform: translateX(-50%);
+        top: 10%; /* Posicionamiento ligeramente ajustado */
+    }
+
+    /* Pseudo-elemento superior (borde del vaso) */
+    .glass:before {
+        content: "";
+        height: calc(40 * var(--factor-escala-diseno));
+        width: calc(40 * var(--factor-escala-diseno));
+        transform-origin: center;
+        border: calc(25 * var(--factor-escala-diseno)) solid var(--color-borde-vaso);
+        border-radius: 100%;
+        position: absolute;
+        /* Recalcular left y top relativos al nuevo ancho/alto */
+        left: calc(256 * var(--factor-escala-diseno)); 
+        top: calc(-74 * var(--factor-escala-diseno));
+    }
+
+    /* Pseudo-elemento inferior (base roja) */
+    .glass:after {
+        content: "";
+        position: absolute;
+        height: calc(15 * var(--factor-escala-diseno));
+        width: 100%; /* Toma el 100% del ancho del vaso */
+        background: var(--color-base-vaso);
+        top: 100%;
+        left: 0%;
+    }
+
+    /* El brillo se escala y se posiciona relativo al vaso */
+    .shine {
+        width: calc(26 * var(--factor-escala-diseno));
+        height: calc(330 * var(--factor-escala-diseno));
+        background: var(--color-brillo);
+        opacity: 0.2;
+        position: absolute;
+        /* Usar porcentajes para left o calc() para mantener la proporción de 85% */
+        left: 85%; 
+        top: calc(200 * var(--factor-escala-diseno));
+        border-radius: calc(100 * var(--factor-escala-diseno));
+        z-index: 10;
+    }
+
+    .shine:before {
+        content: "";
+        width: calc(26 * var(--factor-escala-diseno));
+        height: calc(40 * var(--factor-escala-diseno));
+        position: absolute;
+        background: var(--color-brillo);
+        top: calc(365 * var(--factor-escala-diseno));
+        border-radius: calc(100 * var(--factor-escala-diseno));
+    }
+
+    /* PETALOS: Se ajustan todas las dimensiones y posiciones */
+    .petals {
+         /* Posicionar los pétalos dentro del vaso y centrarlos */
+         position: absolute;
+         top: 10%;
+         left: 50%;
+         transform: translateX(-50%);
+         width: calc(600 * var(--factor-escala-diseno)); /* Mismo ancho que el vaso para facilitar el centrado */
+         height: calc(800 * var(--factor-escala-diseno)); /* Mismo alto que el vaso */
+    }
+
+    .petals>div {
+        position: absolute;
+        background: var(--color-petalo-1);
+        width: calc(85 * var(--factor-escala-diseno));
+        height: calc(120 * var(--factor-escala-diseno));
+        /* top y left se ajustan individualmente, pero se escalan */
+        top: calc(200 * var(--factor-escala-diseno)); 
+        transition: all 0.5s ease-out;
+    }
+
+    .petals>div:nth-child(1) {
+        border-radius: calc(15 * var(--factor-escala-diseno));
+        box-shadow: 0px 0px calc(60 * var(--factor-escala-diseno)) var(--color-sombra-petalo);
+        /* Posición del primer pétalo (el central) relativa a .petals (que ya está centrado) */
+        left: calc(268 * var(--factor-escala-diseno)); 
+        top: calc(200 * var(--factor-escala-diseno));
+        background: var(--color-petalo-1);
+    }
+
+    .petals>div:nth-child(2),
+    .petals>div:nth-child(4),
+    .petals>div:nth-child(6) {
+        background: var(--color-petalo-2-4-6);
+        left: calc(230 * var(--factor-escala-diseno));
+        border-radius: 0px calc(50 * var(--factor-escala-diseno)) 0px calc(50 * var(--factor-escala-diseno));
+        transform-origin: bottom right;
+    }
+
+    .petals>div:nth-child(3),
+    .petals>div:nth-child(5),
+    .petals>div:nth-child(7) {
+        background: var(--color-petalo-3-5-7);
+        left: calc(300 * var(--factor-escala-diseno));
+        border-radius: calc(50 * var(--factor-escala-diseno)) 0px calc(50 * var(--factor-escala-diseno)) 0px;
+        transform-origin: bottom left;
+    }
+    
+    /* Ajuste de posiciones y tamaños específicos de pétalos */
+    .petals>div:nth-child(2) {
+        z-index: 5;
+        background: var(--color-petalo-3-5-7);
+        top: calc(218 * var(--factor-escala-diseno));
+        height: calc(130 * var(--factor-escala-diseno));
+        box-shadow: 0px 0px calc(60 * var(--factor-escala-diseno)) var(--color-sombra-petalo);
+        animation: bloom2 3s ease-in-out;
+        animation-fill-mode: forwards;
+    }
+
+    .petals>div:nth-child(3) {
+        z-index: 4;
+        background: var(--color-petalo-3-5-7);
+        top: calc(218 * var(--factor-escala-diseno));
+        height: calc(130 * var(--factor-escala-diseno));
+        box-shadow: 0px 0px calc(60 * var(--factor-escala-diseno)) var(--color-sombra-petalo);
+        animation: bloom3 3s ease-in-out, glowing 2.5s ease-in-out infinite;
+        animation-fill-mode: forwards;
+    }
+
+    .petals>div:nth-child(4) {
+        z-index: 3;
+        background: var(--color-petalo-2-4-6);
+        top: calc(213 * var(--factor-escala-diseno));
+        height: calc(135 * var(--factor-escala-diseno));
+        box-shadow: 0px 0px calc(60 * var(--factor-escala-diseno)) var(--color-sombra-petalo);
+        animation: bloom4 3s ease-in-out, glowing 2.5s ease-in-out infinite;
+        animation-fill-mode: forwards;
+    }
+
+    .petals>div:nth-child(5) {
+        z-index: 2;
+        background: var(--color-petalo-2-4-6);
+        top: calc(213 * var(--factor-escala-diseno));
+        height: calc(135 * var(--factor-escala-diseno));
+        box-shadow: 0px 0px calc(60 * var(--factor-escala-diseno)) var(--color-sombra-petalo);
+        animation: bloom5 3s ease-in-out, glowing 2.5s ease-in-out infinite;
+        animation-fill-mode: forwards;
+    }
+
+    .petals>div:nth-child(6) {
+        z-index: 1;
+        background: var(--color-petalo-6-7-destacado);
+        top: calc(200 * var(--factor-escala-diseno));
+        height: calc(130 * var(--factor-escala-diseno));
+        box-shadow: 0px 0px calc(60 * var(--factor-escala-diseno)) var(--color-sombra-petalo);
+        animation: bloom6 3s ease-in-out, glowing 2.5s ease-in-out infinite;
+        animation-fill-mode: forwards;
+    }
+
+    .petals>div:nth-child(7) {
+        z-index: 0;
+        background: var(--color-petalo-6-7-destacado);
+        top: calc(200 * var(--factor-escala-diseno));
+        height: calc(130 * var(--factor-escala-diseno));
+        box-shadow: 0px 0px calc(60 * var(--factor-escala-diseno)) var(--color-sombra-petalo);
+        animation: bloom7 3s ease-in-out, glowing 2.5s ease-in-out infinite;
+        animation-fill-mode: forwards;
+    }
+
+    /* HOJAS Y TALLO: Se ajustan todas las dimensiones y posiciones */
+    .leaves {
+         /* Posicionar las hojas y el tallo dentro del vaso y centrarlos */
+         position: absolute;
+         top: 10%;
+         left: 50%;
+         transform: translateX(-50%);
+         width: calc(600 * var(--factor-escala-diseno)); 
+         height: calc(800 * var(--factor-escala-diseno)); 
+    }
+
+    /* Círculo verde en la base de la flor */
+    .leaves>div:nth-last-child(1) {
+        position: absolute;
+        width: calc(55 * var(--factor-escala-diseno));
+        height: calc(30 * var(--factor-escala-diseno));
+        background: var(--color-base-hoja);
+        top: calc(334 * var(--factor-escala-diseno));
+        left: calc(278 * var(--factor-escala-diseno));
+        border-radius: calc(100 * var(--factor-escala-diseno));
+    }
+
+    /* Tallo */
+    .leaves>div:nth-child(1) {
+        position: absolute;
+        width: calc(15 * var(--factor-escala-diseno));
+        height: calc(390 * var(--factor-escala-diseno));
+        background: var(--color-tallo);
+        top: calc(308 * var(--factor-escala-diseno));
+        left: calc(300 * var(--factor-escala-diseno));
+        border-radius: 0 0 calc(100 * var(--factor-escala-diseno)) calc(100 * var(--factor-escala-diseno));
+    }
+
+    /* Hoja izquierda */
+    .leaves>div:nth-child(2) {
+        position: absolute;
+        width: calc(60 * var(--factor-escala-diseno));
+        height: calc(100 * var(--factor-escala-diseno));
+        top: calc(412 * var(--factor-escala-diseno));
+        left: calc(254 * var(--factor-escala-diseno));
+        border-radius: calc(10 * var(--factor-escala-diseno)) calc(80 * var(--factor-escala-diseno)) calc(40 * var(--factor-escala-diseno)) calc(80 * var(--factor-escala-diseno));
+        background: var(--color-tallo);
+        transform-origin: bottom;
+        transform: rotate(-30deg);
+        box-shadow: inset calc(10 * var(--factor-escala-diseno)) calc(10 * var(--factor-escala-diseno)) var(--color-sombra-hoja);
+    }
+
+    /* Hoja derecha */
+    .leaves>div:nth-child(3) {
+        position: absolute;
+        width: calc(60 * var(--factor-escala-diseno));
+        height: calc(100 * var(--factor-escala-diseno));
+        top: calc(360 * var(--factor-escala-diseno));
+        left: calc(300 * var(--factor-escala-diseno));
+        border-radius: calc(80 * var(--factor-escala-diseno)) calc(1 * var(--factor-escala-diseno)) calc(80 * var(--factor-escala-diseno)) calc(40 * var(--factor-escala-diseno));
+        background: var(--color-tallo);
+        transform-origin: bottom;
+        transform: rotate(30deg);
+        box-shadow: inset calc(-10 * var(--factor-escala-diseno)) calc(10 * var(--factor-escala-diseno)) var(--color-sombra-hoja);
+    }
+
+    /* ESPINAS: Se ajustan los tamaños de los bordes para escalado */
+    .thorns {
+         /* Posicionar las espinas dentro del vaso y centrarlos */
+         position: absolute;
+         top: 10%;
+         left: 50%;
+         transform: translateX(-50%);
+         width: calc(600 * var(--factor-escala-diseno)); 
+         height: calc(800 * var(--factor-escala-diseno)); 
+    }
+
+    .thorns>div {
+        position: absolute;
+        width: 0;
+        height: 0;
+        top: calc(200 * var(--factor-escala-diseno));
+    }
+
+    .thorns>div:nth-child(odd) {
+        border-top: calc(15 * var(--factor-escala-diseno)) solid transparent;
+        border-bottom: calc(15 * var(--factor-escala-diseno)) solid transparent;
+        border-left: calc(15 * var(--factor-escala-diseno)) solid var(--color-espinas);
+        left: calc(315 * var(--factor-escala-diseno));
+    }
+
+    .thorns>div:nth-child(even) {
+        border-top: calc(15 * var(--factor-escala-diseno)) solid transparent;
+        border-bottom: calc(15 * var(--factor-escala-diseno)) solid transparent;
+        border-right: calc(15 * var(--factor-escala-diseno)) solid var(--color-espinas);
+        left: calc(285 * var(--factor-escala-diseno));
+    }
+
+    /* Posiciones individuales de las espinas */
+    .thorns>div:nth-child(1) {
+        top: calc(465 * var(--factor-escala-diseno));
+    }
+
+    .thorns>div:nth-child(2) {
+        top: calc(390 * var(--factor-escala-diseno));
+    }
+
+    .thorns>div:nth-child(4) {
+        top: calc(525 * var(--factor-escala-diseno));
+    }
+
+    /* PETALOS CAIDOS: Se ajustan dimensiones y posiciones (aunque estén ocultos por defecto) */
+    .deadPetals {
+        position: absolute;
+        top: 10%;
+        left: 50%;
+        transform: translateX(-50%);
+        width: calc(600 * var(--factor-escala-diseno)); 
+        height: calc(800 * var(--factor-escala-diseno)); 
+    }
+
+    .deadPetals>div {
+        position: absolute;
+        background: var(--color-petalo-1);
+        width: calc(20 * var(--factor-escala-diseno));
+        height: calc(15 * var(--factor-escala-diseno));
+        top: calc(200 * var(--factor-escala-diseno));
+        border-radius: 0px calc(30 * var(--factor-escala-diseno)) 0px calc(30 * var(--factor-escala-diseno));
+        box-shadow: 0px 0px calc(30 * var(--factor-escala-diseno)) rgba(245, 148, 184, .5);
+        transition: all 0.5s ease-out;
+    }
+
+    /* Se mantiene el left original (aunque eran valores absurdamente grandes) y se corrige el top de la animación con calc() */
+    .deadPetals>div:nth-child(1) {
+        left: 119229959987px; 
+        transform: rotate(-30deg);
+        animation: falling 20s 4s ease-in-out infinite;
+    }
+
+    .deadPetals>div:nth-child(2) {
+        left: 26331084746px;
+        transform: rotate(-30deg);
+        animation: falling 20s 8s ease-in-out infinite;
+    }
+
+    .deadPetals>div:nth-child(3) {
+        left: 129759500363px;
+        transform: rotate(-30deg);
+        animation: falling 20s 12s ease-in-out infinite;
+    }
+
+    .deadPetals>div:nth-child(4) {
+        left: 99323149959px;
+        transform: rotate(-30deg);
+        animation: falling 20s 16s ease-in-out infinite;
+    }
+    
+    /* TEXTO: Se ajusta a la nueva escala */
+    .texto {
+        top: 50%;
+        color: white;
+        font-size: calc(35 * var(--factor-escala-diseno)); /* Escala el tamaño de la fuente */
+        text-align: center;
+        position: relative;
+        left: 10%;
+    }
+
+    /* ANIMACIONES: Los keyframes deben tener los valores ajustados con calc() */
+    @keyframes bloom2 {
+        100% {
+            transform: rotate(-25deg);
+        }
+    }
+
+    @keyframes bloom3 {
+        100% {
+            transform: rotate(25deg);
+        }
+    }
+
+    @keyframes bloom4 {
+        100% {
+            transform: rotate(-12.5deg);
+        }
+    }
+
+    @keyframes bloom5 {
+        100% {
+            transform: rotate(12.5deg);
+        }
+    }
+
+    @keyframes bloom6 {
+        100% {
+            transform: rotate(-5deg);
+        }
+    }
+
+    @keyframes bloom7 {
+        100% {
+            transform: rotate(5deg);
+        }
+    }
+
+    /*
+     * Responsive: Media Query para pantallas pequeñas (ej. móviles)
+     * Ajustamos el factor de escala para que la rosa no sea excesivamente grande o pequeña.
+     */
+    @media (max-width: 768px) {
+        :root {
+            /* Aumentamos un poco el factor de escala para que se vea más grande en pantallas pequeñas */
+            --factor-escala-diseno: 0.15vw; 
+        }
+    }
+
+    @media (max-width: 480px) {
+        :root {
+            /* Para móviles muy pequeños, usamos un valor vw más grande para que ocupe más espacio */
+            --factor-escala-diseno: 0.2vw; 
+        }
+    }
+</style>
+
+</head>
+
+<body>
+    <div class="container">
+        <div class="glass">
+            <div class="shine"></div>
+        </div>
+        <div class="leaves"> 
+            <div></div> <div></div> <div></div> <div></div> </div>
+        <div class="thorns">
+            <div></div>
+            <div></div>
+            <div></div>
+            <div></div>
+        </div>
+        <div class="petals">
+            <div></div>
+            <div></div>
+            <div></div>
+            <div></div>
+            <div></div>
+            <div></div>
+            <div></div>
+        </div>
+    </div>
+</body>
+
+</html>
